@@ -26,11 +26,12 @@
     width: 120px;
     height: 120px;
     border-radius: 50%;
-    object-fit: cover;
-    border: 3px solid rgba(212,175,55,0.25);
+    object-fit: contain;
+    border: none;
     box-shadow: 0 8px 40px rgba(212,175,55,0.2), 0 0 60px rgba(212,175,55,0.08);
     animation: splashPulse 1.5s ease-in-out infinite;
     image-rendering: auto;
+    background: transparent;
 }
 
 .logo-splash-text {
@@ -314,12 +315,14 @@ body.light-mode .nav {
     display: block;
     height: clamp(36px, 4vw, 44px);
     width: auto;
+    max-width: 100%;
     border-radius: 50%;
-    object-fit: cover;
-    border: 2px solid rgba(212,175,55,0.2);
-    box-shadow: 0 2px 10px rgba(212,175,55,0.12);
+    object-fit: contain;
+    border: none;
+    box-shadow: none;
     image-rendering: auto;
-    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+    transition: transform 0.25s ease, opacity 0.25s ease;
+    background: transparent;
 }
 
 .logo:hover img, img.logo:hover {
@@ -513,16 +516,18 @@ body.light-mode .btn-nav-admin:hover {
 .hero .logo {
     height: clamp(130px, 24vw, 220px);
     width: auto;
+    max-width: 90vw;
     border-radius: 50%;
     animation: logoFloat 4s ease-in-out infinite;
     box-shadow:
         0 8px 48px var(--color-gold-glow-strong),
         0 0 0 3px rgba(212,175,55,0.15),
         0 0 80px rgba(212,175,55,0.08);
-    border: 3px solid rgba(212,175,55,0.2);
-    object-fit: cover;
+    border: none;
+    object-fit: contain;
     image-rendering: auto;
     transition: transform 0.3s ease, box-shadow 0.3s ease;
+    background: transparent;
 }
 
 .hero .logo:hover {

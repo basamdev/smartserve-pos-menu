@@ -9,31 +9,7 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "images/AppIcons/app-icon-120x120.png",
-      "sizes": "120x120",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "images/AppIcons/app-icon-152x152.png",
-      "sizes": "152x152",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "images/AppIcons/app-icon-167x167.png",
-      "sizes": "167x167",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "images/AppIcons/app-icon-180x180.png",
-      "sizes": "180x180",
-      "type": "image/png",
-      "purpose": "any"
-    },
-    {
-      "src": "images/AppIcons/app-icon-1024x1024.png",
+      "src": "images/ali-cafe-logo-circular.png",
       "sizes": "1024x1024",
       "type": "image/png",
       "purpose": "any maskable"
