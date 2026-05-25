@@ -57,6 +57,24 @@ const i18n = {
         monthlySales: 'فرۆشتنی ئەم مانگە',
         totalOrders: 'کۆی هەموو داواکارییەکان',
         bestSelling: 'باشترین فرۆشراو',
+        selectMonth: 'مانگ هەڵبژێرە',
+        dailySales: 'فرۆشتنی ڕۆژانە',
+        noSalesData: 'هیچ داتای فرۆشتن نییە',
+        january: 'کانوونی دووەم',
+        february: 'شوبات',
+        march: 'ئازار',
+        april: 'نیسان',
+        may: 'ئایار',
+        june: 'حوزەیران',
+        july: 'تەمووز',
+        august: 'ئاب',
+        september: 'ئەیلوول',
+        october: 'تشرینی یەکەم',
+        november: 'تشرینی دووەم',
+        december: 'کانونی یەکەم',
+        week: 'هەفتە',
+        totalSales: 'کۆی هەموو فرۆشتن',
+        weeklySales: 'فرۆشتنی ئەم هەفتەیە',
         recentSales: 'نوێترین فرۆشتنەکان',
         time: 'کات',
         items: 'ئایتم',
@@ -103,6 +121,16 @@ const i18n = {
         no: 'نەخێر',
         sectionNotFound: 'بەش نەدۆزرایەوە',
         errorLoading: 'هەڵە لە بارکردن: ',
+        loading: 'بارکردن...',
+        errorLoadingSection: 'هەڵە لە بارکردنی بەش ',
+        errorPrefix: 'هەڵە: ',
+        unnamed: 'بێ ناو',
+        editItem: 'دەستکاری ئایتم',
+        addNewItem: '+ زیادکردنی ئایتمی نوێ',
+        sold: 'فرۆشراوە',
+        itemsCount: ' ئایتم',
+        unknown: 'نەناسراو',
+        siteName: 'عەلی کافێ',
     },
     ar: {
         menuTitle: 'قائمتنا',
@@ -134,6 +162,24 @@ const i18n = {
         monthlySales: 'مبيعات الشهر',
         totalOrders: 'إجمالي الطلبات',
         bestSelling: 'الأكثر مبيعاً',
+        selectMonth: 'اختر الشهر',
+        dailySales: 'المبيعات اليومية',
+        noSalesData: 'لا توجد بيانات مبيعات',
+        january: 'يناير',
+        february: 'فبراير',
+        march: 'مارس',
+        april: 'أبريل',
+        may: 'مايو',
+        june: 'يونيو',
+        july: 'يوليو',
+        august: 'أغسطس',
+        september: 'سبتمبر',
+        october: 'أكتوبر',
+        november: 'نوفمبر',
+        december: 'ديسمبر',
+        week: 'أسبوع',
+        totalSales: 'إجمالي المبيعات',
+        weeklySales: 'مبيعات الأسبوع',
         recentSales: 'المبيعات الأخيرة',
         time: 'الوقت',
         items: 'عناصر',
@@ -180,6 +226,16 @@ const i18n = {
         no: 'لا',
         sectionNotFound: 'القسم غير موجود',
         errorLoading: 'خطأ في التحميل: ',
+        loading: 'جارٍ التحميل...',
+        errorLoadingSection: 'خطأ في تحميل القسم ',
+        errorPrefix: 'خطأ: ',
+        unnamed: 'بلا اسم',
+        editItem: 'تعديل العنصر',
+        addNewItem: '+ إضافة عنصر جديد',
+        sold: 'مباع',
+        itemsCount: ' عناصر',
+        unknown: 'غير معروف',
+        siteName: 'علي كافيه',
     },
     en: {
         menuTitle: 'Our Menu',
@@ -211,6 +267,24 @@ const i18n = {
         monthlySales: 'Monthly Sales',
         totalOrders: 'Total Orders',
         bestSelling: 'Best Selling',
+        selectMonth: 'Select Month',
+        dailySales: 'Daily Sales',
+        noSalesData: 'No sales data',
+        january: 'January',
+        february: 'February',
+        march: 'March',
+        april: 'April',
+        may: 'May',
+        june: 'June',
+        july: 'July',
+        august: 'August',
+        september: 'September',
+        october: 'October',
+        november: 'November',
+        december: 'December',
+        week: 'Week',
+        totalSales: 'Total Sales',
+        weeklySales: 'Weekly Sales',
         recentSales: 'Recent Sales',
         time: 'Time',
         items: 'Items',
@@ -257,6 +331,32 @@ const i18n = {
         no: 'No',
         sectionNotFound: 'Section not found',
         errorLoading: 'Error loading: ',
+        searchPlaceholder: 'Search menu...',
+        noSearchResults: 'No items found for',
+        favorites: 'Favorites',
+        addToFavorites: 'Add to favorites',
+        removeFromFavorites: 'Removed from favorites',
+        rated: 'Rated',
+        stars: 'stars',
+        itemAddedToCart: 'Added to cart',
+        viewCart: 'View Cart',
+        cart: 'Cart',
+        cartEmpty: 'Cart is empty',
+        quantity: 'Qty',
+        checkout: 'Checkout',
+        orderPlaced: 'Order placed successfully! Total: ',
+        orderError: 'Error placing order: ',
+        loading: 'Loading...',
+        errorLoadingSection: 'Error loading section ',
+        errorPrefix: 'Error: ',
+        sectionNotFound: 'Section not found',
+        unnamed: 'Unnamed',
+        editItem: 'Edit Item',
+        addNewItem: 'Add New Item',
+        sold: 'sold',
+        itemsCount: ' items',
+        unknown: 'unknown',
+        siteName: 'Ali Coffee',
     }
 };
 
@@ -312,14 +412,16 @@ async function loadMenuItems() {
                      const data = { id: doc.id, ...doc.data() };
                      if (data.category !== 'Water') liveItems.push(data);
                  });
-                    cachedMenuItems = liveItems;
-                    renderCategories(liveItems);
-                    if (liveItems.length > 0 && _activeCategory) {
-                        renderMenuItems(liveItems.filter(i => i.category === _activeCategory));
-                    } else if (liveItems.length > 0) {
-                        const grid = document.getElementById('menuGrid');
-                        if (grid) grid.innerHTML = '';
-                    }
+                      cachedMenuItems = liveItems;
+                      renderCategories(liveItems);
+                      if (liveItems.length > 0 && _activeCategory) {
+                          var filtered = liveItems.filter(i => i.category === _activeCategory);
+                          renderMenuItems(filtered);
+                          renderMenuCardsWithFeatures();
+                      } else if (liveItems.length > 0) {
+                          const grid = document.getElementById('menuGrid');
+                          if (grid) grid.innerHTML = '';
+                      }
              },
              err => console.warn('[realtime] error:', err.message)
          );
@@ -393,6 +495,7 @@ function switchCategory(category) {
     setTimeout(() => {
         const items = cachedMenuItems.filter(i => i.category === category);
         renderMenuItems(items);
+        renderMenuCardsWithFeatures();
         grid.classList.remove('category-switching');
     }, 200);
 }
@@ -429,6 +532,7 @@ function renderMenuItems(items) {
         card.className = 'menu-card';
         card.setAttribute('role', 'button');
         card.setAttribute('tabindex', '0');
+        card.setAttribute('data-item-id', item.id);
         card.innerHTML = `
             <div class="menu-card-img-wrapper">
                 <img src="${imageUrl}" alt="${name}" class="menu-card-img" loading="lazy"
@@ -565,6 +669,8 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
     });
+
+    registerServiceWorker();
 });
 
 /* ========================================
@@ -673,6 +779,101 @@ function setupThemeToggle() {
 
     if (themeToggle) themeToggle.addEventListener('click', handleToggle);
     if (adminThemeToggle) adminThemeToggle.addEventListener('click', handleToggle);
+}
+
+/* ========================================
+    Menu Features: Favorites & Ratings
+    ======================================== */
+
+var MENU_FEATURES = {
+    getFavorites() {
+        try { return JSON.parse(localStorage.getItem('menu_favorites') || '[]'); } catch(e) { return []; }
+    },
+
+    toggleFav(id) {
+        var favs = this.getFavorites();
+        var idx = favs.indexOf(id);
+        if (idx > -1) { favs.splice(idx, 1); } else { favs.push(id); }
+        localStorage.setItem('menu_favorites', JSON.stringify(favs));
+        return idx === -1;
+    },
+
+    isFav(id) { return this.getFavorites().indexOf(id) > -1; },
+
+    getRating(itemId) {
+        try { var r = JSON.parse(localStorage.getItem('menu_ratings') || '{}'); return r[itemId] || 0; } catch(e) { return 0; }
+    },
+
+    setRating(itemId, stars) {
+        try { var r = JSON.parse(localStorage.getItem('menu_ratings') || '{}'); r[itemId] = stars; localStorage.setItem('menu_ratings', JSON.stringify(r)); } catch(e) {}
+    }
+};
+
+function renderMenuCardsWithFeatures() {
+    var cards = document.querySelectorAll('.menu-card');
+    cards.forEach(function(card) {
+        var imgWrapper = card.querySelector('.menu-card-img-wrapper');
+        if (!imgWrapper || card.querySelector('.menu-card-actions')) return;
+
+        var actions = document.createElement('div');
+        actions.className = 'menu-card-actions';
+
+        var itemId = card.getAttribute('data-item-id') || '';
+
+        var favBtn = document.createElement('button');
+        favBtn.className = 'menu-fav-btn';
+        favBtn.textContent = '♡';
+        if (itemId && MENU_FEATURES.isFav(itemId)) {
+            favBtn.textContent = '♥';
+            favBtn.classList.add('active');
+        }
+        favBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            if (itemId) {
+                var added = MENU_FEATURES.toggleFav(itemId);
+                this.textContent = added ? '♥' : '♡';
+                this.classList.toggle('active', added);
+            }
+        });
+
+        var rating = itemId ? MENU_FEATURES.getRating(itemId) : 0;
+        var ratingHtml = '<div class="menu-rating" data-item-id="' + itemId + '">';
+        for (var s = 1; s <= 5; s++) {
+            ratingHtml += '<span class="star' + (s <= rating ? ' active' : '') + '" data-stars="' + s + '">★</span>';
+        }
+        ratingHtml += '</div>';
+
+        actions.innerHTML = ratingHtml;
+        actions.insertBefore(favBtn, actions.firstChild);
+        imgWrapper.appendChild(actions);
+
+        var starContainer = actions.querySelector('.menu-rating');
+        if (starContainer) {
+            starContainer.querySelectorAll('.star').forEach(function(star) {
+                star.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    var sid = starContainer.getAttribute('data-item-id');
+                    var stars = parseInt(star.getAttribute('data-stars'));
+                    if (sid) {
+                        MENU_FEATURES.setRating(sid, stars);
+                        starContainer.querySelectorAll('.star').forEach(function(st, idx) {
+                            st.classList.toggle('active', idx < stars);
+                        });
+                    }
+                });
+            });
+        }
+    });
+}
+
+/* ========================================
+   PWA Service Worker Registration
+   ======================================== */
+
+function registerServiceWorker() {
+    if ('serviceWorker' in navigator) {
+        navigator.serviceWorker.register('sw.js').catch(function() {});
+    }
 }
 
 /* ========================================

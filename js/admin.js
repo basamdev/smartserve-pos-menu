@@ -136,9 +136,10 @@ function initAdminPanel() {
 }
 
 function loadAdminSection(section) {
+    var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     var adminContent = document.getElementById('adminContent');
     if (!adminContent) return;
-    adminContent.innerHTML = '<div class="loading">Loading...</div>';
+    adminContent.innerHTML = '<div class="loading">' + S.loading + '</div>';
 
     try {
         if (section === 'dashboard') { loadDashboard(); }
@@ -148,10 +149,10 @@ function loadAdminSection(section) {
         else if (section === 'cashier') { loadCashier(); }
         else if (section === 'settings') { loadSettings(); }
         else if (section === 'logout') { handleLogout(); }
-        else { adminContent.innerHTML = '<p>Section not found</p>'; }
+        else { adminContent.innerHTML = '<p>' + S.sectionNotFound + '</p>'; }
     } catch (error) {
-        console.error('Error loading section ' + section + ':', error);
-        adminContent.innerHTML = '<p style="color:#C62828;padding:20px;">Error: ' + error.message + '</p>';
+        console.error(S.errorLoadingSection + section + ':', error);
+        adminContent.innerHTML = '<p style="color:#C62828;padding:20px;">' + S.errorPrefix + error.message + '</p>';
     }
 }
 
@@ -165,10 +166,26 @@ function toDisplayTime(ts) {
 
 /* ============ DASHBOARD ============ */
 
+function getMonthName(monthIndex, strings) {
+    var keys = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+    return (monthIndex + 1) + ' — ' + (strings[keys[monthIndex]] || (monthIndex + 1));
+}
+
 function loadDashboard() {
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     var adminContent = document.getElementById('adminContent');
+    var now = new Date();
+    var currentMonth = now.getMonth();
+    var monthsHtml = '';
+    var mNames = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+    for (var m = 0; m < 12; m++) {
+        monthsHtml += '<option value="' + m + '"' + (m === currentMonth ? ' selected' : '') + '>' + (m + 1) + ' — ' + S[mNames[m]] + ' ' + now.getFullYear() + '</option>';
+    }
     adminContent.innerHTML =
+        '<div class="month-selector">' +
+            '<label>' + S.selectMonth + '</label>' +
+            '<select id="dashboardMonthSelect">' + monthsHtml + '</select>' +
+        '</div>' +
         '<div class="admin-stats">' +
             '<div class="stat-card"><h3>' + S.todaySales + '</h3><div class="stat-value" id="todaySales">0 IQD</div></div>' +
             '<div class="stat-card"><h3>' + S.monthlySales + '</h3><div class="stat-value" id="monthlySales">0 IQD</div></div>' +
@@ -176,42 +193,111 @@ function loadDashboard() {
             '<div class="stat-card"><h3>' + S.bestSelling + '</h3><div class="stat-value" id="bestSelling">-</div></div>' +
         '</div>' +
         '<div class="card">' +
+            '<h2>' + S.dailySales + ' — <span id="dailySalesMonthLabel"></span></h2>' +
+            '<div id="dailySalesContainer"><div class="loading">Loading...</div></div>' +
+        '</div>' +
+        '<div class="card" style="margin-top:20px;">' +
             '<h2>' + S.recentSales + '</h2>' +
             '<div id="recentSalesContainer"><div class="loading">Loading...</div></div>' +
         '</div>';
-    loadDashboardStats();
+    var monthSelect = document.getElementById('dashboardMonthSelect');
+    if (monthSelect) {
+        monthSelect.addEventListener('change', function () {
+            loadDashboardStats(parseInt(this.value, 10));
+        });
+    }
+    loadDashboardStats(currentMonth);
     loadRecentSales();
 }
 
-function loadDashboardStats() {
+function loadDashboardStats(month) {
+    if (month === undefined || month === null) month = new Date().getMonth();
+    var year = new Date().getFullYear();
+    var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
+
     var today = new Date();
     today.setHours(0, 0, 0, 0);
     var tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
+    var mStart = new Date(year, month, 1);
+    var mEnd = new Date(year, month + 1, 1);
+
+    document.getElementById('dailySalesMonthLabel').textContent = getMonthName(month, S);
+
     db.collection('sales').where('timestamp', '>=', today).where('timestamp', '<', tomorrow).get().then(function (snap) {
         var total = 0;
         snap.forEach(function (d) { total += (d.data().total || 0); });
         var el = document.getElementById('todaySales');
-        if (el) el.textContent = total + ' IQD';
+        if (el) el.textContent = total.toLocaleString() + ' IQD';
     }).catch(function () {});
 
-    var mStart = new Date(today.getFullYear(), today.getMonth(), 1);
-    var mEnd = new Date(today.getFullYear(), today.getMonth() + 1, 1);
+    var monthlyTotal = 0;
+    var orderCount = 0;
+    var dayTotals = {};
+    var itemCounts = {};
+
     db.collection('sales').where('timestamp', '>=', mStart).where('timestamp', '<', mEnd).get().then(function (snap) {
-        var total = 0;
-        snap.forEach(function (d) { total += (d.data().total || 0); });
-        var el = document.getElementById('monthlySales');
-        if (el) el.textContent = total + ' IQD';
-    }).catch(function () {});
+        snap.forEach(function (d) {
+            var sale = d.data();
+            monthlyTotal += (sale.total || 0);
+            orderCount++;
+            var ts = sale.timestamp;
+            var saleDate;
+            if (ts && typeof ts.toDate === 'function') saleDate = ts.toDate();
+            else if (ts && ts.seconds) saleDate = new Date(ts.seconds * 1000);
+            else saleDate = new Date(ts);
+            var dayKey = saleDate.getDate();
+            dayTotals[dayKey] = (dayTotals[dayKey] || 0) + (sale.total || 0);
+            if (sale.items) {
+                sale.items.forEach(function (it) {
+                    var itemName = it.name || it['name_' + (localStorage.getItem('selectedLang') || 'ku')] || it.name_en || '—';
+                    var qty = it.quantity || 1;
+                    if (!itemCounts[itemName]) itemCounts[itemName] = 0;
+                    itemCounts[itemName] += qty;
+                });
+            }
+        });
+        var elM = document.getElementById('monthlySales');
+        if (elM) elM.textContent = monthlyTotal.toLocaleString() + ' IQD';
+        var elO = document.getElementById('totalOrders');
+        if (elO) elO.textContent = orderCount.toString();
 
-    db.collection('sales').get().then(function (snap) {
-        var el = document.getElementById('totalOrders');
-        if (el) el.textContent = snap.size;
-    }).catch(function () {});
+        var bestName = '-';
+        var bestQty = 0;
+        Object.keys(itemCounts).forEach(function (name) {
+            if (itemCounts[name] > bestQty) { bestQty = itemCounts[name]; bestName = name; }
+        });
+        var elB = document.getElementById('bestSelling');
+        if (elB) {
+            if (bestQty > 0) {
+                elB.innerHTML = '<span class="best-item-name">' + bestName + '</span> <span class="best-item-qty">(' + bestQty + ' ' + S.sold + ')</span>';
+            } else {
+                elB.textContent = '-';
+            }
+        }
 
-    var elBest = document.getElementById('bestSelling');
-    if (elBest) elBest.textContent = '-';
+        var daysInM = new Date(year, month + 1, 0).getDate();
+        var html = '<table class="daily-sales-table"><thead><tr><th>Day</th><th>' + S.total + ' (IQD)</th></tr></thead><tbody>';
+        for (var d = 1; d <= daysInM; d++) {
+            var dTotal = dayTotals[d] || 0;
+            var cls = dTotal > 0 ? 'day-sales' : 'day-sales zero';
+            var isToday = (d === today.getDate() && month === today.getMonth());
+            html += '<tr' + (isToday ? ' style="background:rgba(212,175,55,0.06);"' : '') + '><td>' + (isToday ? '<strong style="color:var(--gold);">' + d + ' ★</strong>' : d) + '</td><td class="' + cls + '">' + dTotal.toLocaleString() + ' IQD</td></tr>';
+        }
+        html += '</tbody></table>';
+        var container = document.getElementById('dailySalesContainer');
+        if (container) container.innerHTML = html;
+    }).catch(function () {
+        var elM = document.getElementById('monthlySales');
+        if (elM) elM.textContent = '0 IQD';
+        var elO = document.getElementById('totalOrders');
+        if (elO) elO.textContent = '0';
+        var elB = document.getElementById('bestSelling');
+        if (elB) elB.textContent = '-';
+        var container = document.getElementById('dailySalesContainer');
+        if (container) container.innerHTML = '';
+    });
 }
 
 function loadRecentSales() {
@@ -228,7 +314,7 @@ function loadRecentSales() {
         snap.forEach(function (doc) {
             var sale = doc.data();
             var cnt = sale.items ? sale.items.reduce(function (s, i) { return s + (i.quantity || 1); }, 0) : 0;
-            html += '<tr><td>' + toDisplayTime(sale.timestamp) + '</td><td>' + cnt + ' items</td><td>' + (sale.total || 0) + ' IQD</td></tr>';
+            html += '<tr><td>' + toDisplayTime(sale.timestamp) + '</td><td>' + cnt + S.itemsCount + '</td><td>' + (sale.total || 0) + ' IQD</td></tr>';
         });
         html += '</tbody></table></div>';
         container.innerHTML = html;
@@ -300,7 +386,7 @@ function loadItemsList() {
          renderItemsList(docs);
     }).catch(function (e) {
         var el = document.getElementById('itemsList');
-        if (el) el.innerHTML = '<p style="color:#C62828;">Error: ' + e.message + '</p>';
+         if (el) el.innerHTML = '<p style="color:#C62828;">' + S.errorPrefix + e.message + '</p>';
     });
 }
 
@@ -315,7 +401,7 @@ function renderItemsList(items) {
     var html = '<div class="table-responsive"><table class="admin-table"><thead><tr><th>Image</th><th>Name</th><th>' + S.category + '</th><th>' + S.price + '</th><th>' + S.available + '</th><th>Actions</th></tr></thead><tbody>';
     items.forEach(function (doc) {
         var item = doc.data();
-        var name = item['name_' + lang] || item.name_en || 'Unnamed';
+        var name = item['name_' + lang] || item.name_en || S.unnamed;
         var img = item.image || 'https://placehold.co/50x50?text=No+Image';
         var avail = item.available ? '<span style="color:#2E7D32;">' + S.yes + '</span>' : '<span style="color:#C62828;">' + S.no + '</span>';
         var catName = catMap[item.category] || item.category || '-';
@@ -344,7 +430,7 @@ function wireItemEvents() {
     var addBtn = document.getElementById('addItemBtn');
     if (addBtn) {
         addBtn.addEventListener('click', function () {
-            document.getElementById('modalTitle').textContent = 'Add New Item';
+            document.getElementById('modalTitle').textContent = S.addNewItem;
             document.getElementById('itemForm').reset();
             document.getElementById('itemId').value = '';
             document.getElementById('itemAvailable').checked = true;
@@ -425,7 +511,8 @@ function applyItemFilter(searchTerm, cat) {
 }
 
 function saveItem() {
-    var nameKu = document.getElementById('itemNameKu').value.trim();
+     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
+     var nameKu = document.getElementById('itemNameKu').value.trim();
     var nameAr = document.getElementById('itemNameAr').value.trim();
     var nameEn = document.getElementById('itemNameEn').value.trim();
     var price = document.getElementById('itemPrice').value.trim();
@@ -491,11 +578,11 @@ function editItem(itemId) {
             var pr = document.getElementById('itemImagePreview');
             if (pr) { pr.src = item.image; pr.style.display = 'block'; }
         }
-        document.getElementById('modalTitle').textContent = 'Edit Item';
+        document.getElementById('modalTitle').textContent = S.editItem;
         var modal = document.getElementById('itemModal');
         modal.classList.add('active');
         activeItemModal = modal;
-    }).catch(function (e) { alert('Error: ' + e.message); });
+    }).catch(function (e) { alert(S.errorPrefix + e.message); });
 }
 
 function deleteItem(itemId) {
@@ -503,7 +590,7 @@ function deleteItem(itemId) {
     if (!confirm(S.deleteConfirm)) return;
     db.collection('menuItems').doc(itemId).delete().then(function () {
         loadItemsList();
-    }).catch(function (e) { alert('Error: ' + e.message); });
+    }).catch(function (e) { alert(S.errorPrefix + e.message); });
 }
 
 /* ============ CATEGORIES ============ */
@@ -534,40 +621,143 @@ function loadManageCategories() {
 function loadSalesReports() {
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     var adminContent = document.getElementById('adminContent');
+    var now = new Date();
+    var currentMonth = now.getMonth();
+    var monthsHtml = '';
+    var mNames = ['january','february','march','april','may','june','july','august','september','october','november','december'];
+    for (var m = 0; m < 12; m++) {
+        monthsHtml += '<option value="' + m + '"' + (m === currentMonth ? ' selected' : '') + '>' + (m + 1) + ' — ' + S[mNames[m]] + ' ' + now.getFullYear() + '</option>';
+    }
     adminContent.innerHTML =
+        '<div class="month-selector">' +
+            '<label>' + S.selectMonth + '</label>' +
+            '<select id="reportsMonthSelect">' + monthsHtml + '</select>' +
+        '</div>' +
         '<div class="admin-stats">' +
             '<div class="stat-card"><h3>' + S.todaySales + '</h3><div class="stat-value" id="rToday">0 IQD</div></div>' +
             '<div class="stat-card"><h3>' + S.weeklySales + '</h3><div class="stat-value" id="rWeek">0 IQD</div></div>' +
             '<div class="stat-card"><h3>' + S.monthlySales + '</h3><div class="stat-value" id="rMonth">0 IQD</div></div>' +
             '<div class="stat-card"><h3>' + S.totalSales + '</h3><div class="stat-value" id="rTotal">0 IQD</div></div>' +
+        '</div>' +
+        '<div class="admin-stats" style="margin-top:16px;">' +
+            '<div class="stat-card"><h3>' + S.bestSelling + '</h3><div class="stat-value" id="rBest" style="font-size:1.1rem;">-</div></div>' +
+            '<div class="stat-card"><h3>' + S.totalOrders + '</h3><div class="stat-value" id="rOrders">0</div></div>' +
+            '<div class="stat-card"><h3>' + S.dailySales + '</h3><div class="stat-value" id="rAvgDay">0 IQD</div></div>' +
+            '<div class="stat-card"><h3>' + S.totalOrders + '/' + S.week + '</h3><div class="stat-value" id="rWeekOrders">0</div></div>' +
+        '</div>' +
+        '<div class="card" style="margin-top:20px;">' +
+            '<h2>' + S.dailySales + ' — <span id="rDailyLabel"></span></h2>' +
+            '<div id="rDailyContainer"><div class="loading">Loading...</div></div>' +
         '</div>';
+    var monthSelect = document.getElementById('reportsMonthSelect');
+    if (monthSelect) {
+        monthSelect.addEventListener('change', function () {
+            loadReportsStats(parseInt(this.value, 10));
+        });
+    }
+    loadReportsStats(currentMonth);
+}
+
+function loadReportsStats(month) {
+    if (month === undefined || month === null) month = new Date().getMonth();
+    var year = new Date().getFullYear();
+    var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
 
     var today = new Date();
     today.setHours(0, 0, 0, 0);
     var tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
+    var mStart = new Date(year, month, 1);
+    var mEnd = new Date(year, month + 1, 1);
+
+    document.getElementById('rDailyLabel').textContent = getMonthName(month, S);
+
     db.collection('sales').where('timestamp', '>=', today).where('timestamp', '<', tomorrow).get().then(function (s) {
         var t = 0; s.forEach(function (d) { t += d.data().total || 0; });
-        var el = document.getElementById('rToday'); if (el) el.textContent = t + ' IQD';
+        var el = document.getElementById('rToday'); if (el) el.textContent = t.toLocaleString() + ' IQD';
     }).catch(function () {});
 
     var wStart = new Date(today); wStart.setDate(today.getDate() - 6);
+    var weekOrders = 0;
     db.collection('sales').where('timestamp', '>=', wStart).where('timestamp', '<', tomorrow).get().then(function (s) {
-        var t = 0; s.forEach(function (d) { t += d.data().total || 0; });
-        var el = document.getElementById('rWeek'); if (el) el.textContent = t + ' IQD';
+        var t = 0; s.forEach(function (d) { t += d.data().total || 0; weekOrders++; });
+        var el = document.getElementById('rWeek'); if (el) el.textContent = t.toLocaleString() + ' IQD';
+        var elWO = document.getElementById('rWeekOrders'); if (elWO) elWO.textContent = weekOrders.toString();
     }).catch(function () {});
 
-    var mStart = new Date(today.getFullYear(), today.getMonth(), 1);
-    var mEnd = new Date(today.getFullYear(), today.getMonth() + 1, 1);
-    db.collection('sales').where('timestamp', '>=', mStart).where('timestamp', '<', mEnd).get().then(function (s) {
-        var t = 0; s.forEach(function (d) { t += d.data().total || 0; });
-        var el = document.getElementById('rMonth'); if (el) el.textContent = t + ' IQD';
-    }).catch(function () {});
+    var monthlyTotal = 0;
+    var monthOrderCount = 0;
+    var allTimeTotal = 0;
+    var dayTotals = {};
+    var itemCounts = {};
+
+    db.collection('sales').where('timestamp', '>=', mStart).where('timestamp', '<', mEnd).get().then(function (snap) {
+        snap.forEach(function (d) {
+            var sale = d.data();
+            monthlyTotal += (sale.total || 0);
+            monthOrderCount++;
+            var ts = sale.timestamp;
+            var saleDate;
+            if (ts && typeof ts.toDate === 'function') saleDate = ts.toDate();
+            else if (ts && ts.seconds) saleDate = new Date(ts.seconds * 1000);
+            else saleDate = new Date(ts);
+            var dayKey = saleDate.getDate();
+            dayTotals[dayKey] = (dayTotals[dayKey] || 0) + (sale.total || 0);
+            if (sale.items) {
+                sale.items.forEach(function (it) {
+                    var itemName = it.name || it['name_' + (localStorage.getItem('selectedLang') || 'ku')] || it.name_en || '—';
+                    var qty = it.quantity || 1;
+                    if (!itemCounts[itemName]) itemCounts[itemName] = 0;
+                    itemCounts[itemName] += qty;
+                });
+            }
+        });
+        var elM = document.getElementById('rMonth');
+        if (elM) elM.textContent = monthlyTotal.toLocaleString() + ' IQD';
+        var elO = document.getElementById('rOrders');
+        if (elO) elO.textContent = monthOrderCount.toString();
+
+        var daysWithSales = Object.keys(dayTotals).length;
+        var avgDay = daysWithSales > 0 ? Math.round(monthlyTotal / daysWithSales) : 0;
+        var elAvg = document.getElementById('rAvgDay');
+        if (elAvg) elAvg.textContent = avgDay.toLocaleString() + ' IQD';
+
+        var bestName = '-';
+        var bestQty = 0;
+        Object.keys(itemCounts).forEach(function (name) {
+            if (itemCounts[name] > bestQty) { bestQty = itemCounts[name]; bestName = name; }
+        });
+        var elB = document.getElementById('rBest');
+        if (elB) {
+            if (bestQty > 0) {
+                elB.innerHTML = '<span class="best-item-name">' + bestName + '</span> <span class="best-item-qty">(' + bestQty + ' ' + S.sold + ')</span>';
+            } else {
+                elB.textContent = '-';
+            }
+        }
+
+        var daysInM = new Date(year, month + 1, 0).getDate();
+        var html = '<table class="daily-sales-table"><thead><tr><th>Day</th><th>' + S.total + ' (IQD)</th></tr></thead><tbody>';
+        for (var d = 1; d <= daysInM; d++) {
+            var dTotal = dayTotals[d] || 0;
+            var cls = dTotal > 0 ? 'day-sales' : 'day-sales zero';
+            var isToday = (d === today.getDate() && month === today.getMonth());
+            html += '<tr' + (isToday ? ' style="background:rgba(212,175,55,0.06);"' : '') + '><td>' + (isToday ? '<strong style="color:var(--gold);">' + d + ' ★</strong>' : d) + '</td><td class="' + cls + '">' + dTotal.toLocaleString() + ' IQD</td></tr>';
+        }
+        html += '</tbody></table>';
+        var container = document.getElementById('rDailyContainer');
+        if (container) container.innerHTML = html;
+    }).catch(function () {
+        var elM = document.getElementById('rMonth'); if (elM) elM.textContent = '0 IQD';
+        var elO = document.getElementById('rOrders'); if (elO) elO.textContent = '0';
+        var elB = document.getElementById('rBest'); if (elB) elB.textContent = '-';
+        var container = document.getElementById('rDailyContainer'); if (container) container.innerHTML = '';
+    });
 
     db.collection('sales').get().then(function (s) {
         var t = 0; s.forEach(function (d) { t += d.data().total || 0; });
-        var el = document.getElementById('rTotal'); if (el) el.textContent = t + ' IQD';
+        var el = document.getElementById('rTotal'); if (el) el.textContent = t.toLocaleString() + ' IQD';
     }).catch(function () {});
 }
 
@@ -633,7 +823,7 @@ function loadCashierItems() {
             if (filtered.length === 0) { grid.innerHTML = '<div class="cashier-empty">' + S2.noCategoryItems + '</div>'; return; }
             var html = '';
             filtered.forEach(function (it) {
-                var name = it.v['name_' + lang] || it.v.name_en || 'Item';
+                 var name = it.v['name_' + lang] || it.v.name_en || S.unnamed;
                 var price = it.v.price || 0;
                 var img = it.v.image || '';
                 html += '<div class="cashier-item-card" data-id="' + it.id + '" data-name="' + name + '" data-price="' + price + '">' +
@@ -661,7 +851,7 @@ function loadCashierItems() {
         });
     }).catch(function (e) {
         var grid = document.getElementById('cashierGrid');
-        if (grid) grid.innerHTML = '<div class="cashier-empty">Error: ' + e.message + '</div>';
+         if (grid) grid.innerHTML = '<div class="cashier-empty">' + S.errorPrefix + e.message + '</div>';
     });
 }
 
@@ -676,7 +866,7 @@ function wireCashierEvents() {
                 items: orderItems.map(function (i) { return { name: i.name, price: i.price, quantity: i.quantity }; }),
                 total: total,
                 timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-                cashier: (window.auth && auth.currentUser) ? auth.currentUser.email : 'unknown'
+                 cashier: (window.auth && auth.currentUser) ? auth.currentUser.email : S.unknown
             }).then(function () {
                 alert(S.paymentSuccess + total.toLocaleString() + ' IQD');
                 orderItems.length = 0;
@@ -708,7 +898,7 @@ function updateOrderDisplay() {
     if (!container) return;
 
     if (orderItems.length === 0) {
-        container.innerHTML = '<div class="cashier-empty">No items added yet.<br>Tap items to add them.</div>';
+        container.innerHTML = '<div class="cashier-empty">' + S.noItemsAdded + '</div>';
         if (totalEl) totalEl.textContent = '0 IQD';
         return;
     }
@@ -767,7 +957,7 @@ function loadSettings() {
     adminContent.innerHTML =
         '<div class="card">' +
             '<h2>' + S.settings + '</h2>' +
-            '<div class="form-group"><label>' + S.cafeName + '</label><input type="text" id="cafeName" value="Ali Coffee"></div>' +
+            '<div class="form-group"><label>' + S.cafeName + '</label><input type="text" id="cafeName" value="' + S.siteName + '"></div>' +
             '<div class="form-group"><label>' + S.currency + '</label><input type="text" value="IQD" readonly></div>' +
             '<button class="btn-primary" id="saveSettingsBtn">' + S.saveSettings + '</button>' +
         '</div>';

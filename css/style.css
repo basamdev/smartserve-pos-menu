@@ -686,17 +686,11 @@ body.light-mode .hero .lang-btn:hover {
     position: sticky;
     top: 52px;
     z-index: 200;
-    background: rgba(10,10,11,0.92);
-    backdrop-filter: blur(16px);
-    -webkit-backdrop-filter: blur(16px);
+    background: transparent;
     display: flex;
     flex-direction: column;
     transition: all var(--duration-slow) var(--ease-out-expo);
     padding-bottom: 8px;
-}
-
-body.light-mode .menu-sticky-wrapper {
-    background: rgba(250,248,245,0.96);
 }
 
 /* Menu Header */
@@ -759,12 +753,7 @@ body.detail-open .menu-sticky-wrapper {
 }
 
 body.category-selected .category-bar {
-    background: rgba(10,10,11,0.96);
     padding-bottom: 14px;
-}
-
-body.light-mode.category-selected .category-bar {
-    background: rgba(250,248,245,0.99);
 }
 
 body.detail-open .category-bar {
@@ -1509,6 +1498,88 @@ body.light-mode .detail-backdrop {
 }
 
 /* ========================================
+    MENU FEATURES: Ratings & Favorites
+    ======================================== */
+
+.menu-card-actions {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    right: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    z-index: 4;
+    pointer-events: none;
+}
+
+.menu-card-actions > * {
+    pointer-events: auto;
+}
+
+.menu-fav-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(0,0,0,0.5);
+    backdrop-filter: blur(4px);
+    color: #fff;
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.menu-fav-btn:hover {
+    background: rgba(0,0,0,0.7);
+    transform: scale(1.1);
+}
+
+.menu-fav-btn.active {
+    color: #E91E63;
+}
+
+.menu-rating {
+    display: flex;
+    gap: 2px;
+}
+
+.menu-rating .star {
+    font-size: 0.75rem;
+    color: rgba(255,255,255,0.2);
+    cursor: pointer;
+    transition: color 0.15s ease;
+}
+
+.menu-rating .star.active {
+    color: #FFD700;
+}
+
+.menu-rating .star:hover,
+.menu-rating .star:hover ~ .star {
+    color: #FFD700;
+}
+
+@media (max-width: 768px) {
+    .menu-card-actions {
+        bottom: 6px;
+        left: 6px;
+        right: 6px;
+    }
+
+    .menu-fav-btn {
+        width: 28px;
+        height: 28px;
+        font-size: 0.8rem;
+    }
+}
+
+@media (max-width: 480px) {
+
+/* ========================================
    RESPONSIVE
    ======================================== */
 
@@ -1619,8 +1690,7 @@ body.light-mode .detail-backdrop {
     }
 
     .menu-layout {
-        padding: 0 12px 34px;
-        margin-top: 32px !important;
+        padding: 12px 12px 32px;
     }
 
     .hero .lang-btn {
@@ -1810,8 +1880,7 @@ body.light-mode .detail-backdrop {
     }
 
     .menu-layout {
-        padding: 0 10px 24px;
-        margin-top: 32px !important;
+        padding: 10px 10px 20px;
     }
 
     .hero {
@@ -2008,8 +2077,8 @@ body.light-mode .detail-backdrop {
     }
 
     .menu-layout {
-        padding: 22px 8px 20px;
-        margin-top: 14px;
+        padding: 8px 8px 16px;
+        margin-top: 0;
     }
 
     .hero .logo {
