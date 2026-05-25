@@ -3,9 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ali Cafe - Admin Panel</title>
-    <link rel="icon" type="image/png" href="images/ali-cafe-logo-circular.png">
-    <link rel="apple-touch-icon" href="images/ali-cafe-logo-circular.png">
+    <title>Ali Coffee - Admin Panel</title>
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" href="images/ali-cafe-app-icon.png">
+    <link rel="apple-touch-icon" sizes="180x180" href="images/AppIcons/app-icon-180x180.png">
+    <link rel="apple-touch-icon" sizes="167x167" href="images/AppIcons/app-icon-167x167.png">
+    <link rel="apple-touch-icon" sizes="152x152" href="images/AppIcons/app-icon-152x152.png">
+    <link rel="apple-touch-icon" sizes="120x120" href="images/AppIcons/app-icon-120x120.png">
+    <link rel="apple-touch-icon" href="images/AppIcons/app-icon-1024x1024.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Ali Coffee">
+    <meta name="theme-color" content="#D4AF37">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -13,12 +22,14 @@
 </head>
 <body>
     <div class="admin-container admin-layout">
-        <div class="admin-sidebar">
+        <div class="sidebar-overlay" id="sidebarOverlay"></div>
+        <div class="admin-sidebar" id="adminSidebar">
             <div class="sidebar-header">
                 <div class="sidebar-brand">
-                    <img src="images/ali-cafe-logo-circular.png" alt="Ali Cafe" class="sidebar-brand-icon" onclick="window.location.href='menu.html'" onerror="fallbackLogo(this)">
-                    <span class="sidebar-brand-text">Ali Cafe</span>
+                    <img src="images/ali-cafe-logo-circular.png" alt="Ali Coffee" class="sidebar-brand-icon" onclick="window.location.href='menu.html'" onerror="fallbackLogo(this)">
+                    <span class="sidebar-brand-text">Ali Coffee</span>
                 </div>
+                <button class="sidebar-close" id="sidebarClose" aria-label="Close menu">✕</button>
             </div>
             <div class="sidebar-nav">
                 <button class="nav-item admin-nav-btn active" data-section="dashboard">
@@ -46,7 +57,12 @@
         </div>
         <div class="admin-main">
             <div class="admin-header">
-                <h1 class="admin-title">Dashboard</h1>
+                <div class="admin-header-left">
+                    <button class="sidebar-hamburger" id="sidebarHamburger" aria-label="Open menu">
+                        <span></span><span></span><span></span>
+                    </button>
+                    <h1 class="admin-title">Dashboard</h1>
+                </div>
                 <div class="admin-header-actions">
                     <div class="admin-lang-switcher">
                         <button class="admin-lang-btn" data-lang="ku">KU</button>

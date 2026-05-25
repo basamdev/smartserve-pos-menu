@@ -14,6 +14,6 @@
       <path d="M48 8h80a12 12 0 0 1 12 12v18a12 12 0 0 1-12 12H48a12 12 0 0 1-12-12V20A12 12 0 0 1 48 8z" fill="#4A2C2A"/>
       <path d="M140 22c0 14-10 26-24 26" stroke="#4A2C2A" stroke-width="6" fill="none" stroke-linecap="round"/>
     </g>
-    <text x="140" y="60" class="t">Ali Cafe</text>
+    <text x="140" y="60" class="t">Ali Coffee</text>
   </g>
 </svg>

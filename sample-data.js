@@ -1,4 +1,4 @@
-// Sample Data for Ali Cafe
+// Sample Data for Ali Coffee
 // Run this in browser console after opening the Firebase console or create a simple HTML file to add sample items
 
 const sampleItems = [
@@ -135,15 +135,15 @@ const sampleItems = [
         available: true
     },
     {
-        name_ku: "ئاوي",
-        name_ar: "ماء",
-        name_en: "Water",
-        description_ku: "ئاوی سارد",
-        description_ar: "ماء بارد",
-        description_en: "Cold mineral water",
-        price: 500,
-        image: "https://images.unsplash.com/photo-1548839140-29a749e1cf52?w=400",
-        category: "Water",
+        name_ku: "نێرگیلە",
+        name_ar: "نرگیلة",
+        name_en: "Shisha",
+        description_ku: "نێرگیلەی بە تەمی میوە",
+        description_ar: "نرگیلة بنكهة الفواكه",
+        description_en: "Fruit-flavored shisha",
+        price: 5000,
+        image: "https://cdn-icons-png.flaticon.com/128/10170/10170651.png",
+        category: "Shisha",
         available: true
     },
     {

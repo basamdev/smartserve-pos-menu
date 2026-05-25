@@ -1,4 +1,4 @@
-// App.js — Ali Cafe Premium Menu
+// App.js — Ali Coffee Premium Menu
 // Handles: i18n, theme, category filtering, product detail modal, video player
 
 window.openMenu = function (lang) {
@@ -50,7 +50,7 @@ const i18n = {
         tea: 'چای',
         dessert: 'شیرینی',
         coldDrinks: 'خواردنەوەی سارد',
-        water: 'ئاو',
+        shisha: 'نێرگیلە',
         specialDrinks: 'خواردنەوەی تایبەت',
         viewDetails: 'بینینی زیاتر',
         todaySales: 'فرۆشتنی ئەمڕۆ',
@@ -127,7 +127,7 @@ const i18n = {
         tea: 'شاي',
         dessert: 'حلوى',
         coldDrinks: 'مشروبات باردة',
-        water: 'ماء',
+        shisha: 'نرگیلة',
         specialDrinks: 'مشروبات خاصة',
         viewDetails: 'عرض التفاصيل',
         todaySales: 'مبيعات اليوم',
@@ -188,7 +188,7 @@ const i18n = {
         noCategoryItems: 'No items in this category.',
         errorLoadingMenu: 'Error loading menu.',
         noCategories: 'No categories.',
-        pageTitle: 'Ali Cafe | Menu',
+        pageTitle: 'Ali Coffee | Menu',
         dashboard: 'Dashboard',
         manageItems: 'Manage Items',
         manageCategories: 'Manage Categories',
@@ -204,7 +204,7 @@ const i18n = {
         tea: 'Tea',
         dessert: 'Dessert',
         coldDrinks: 'Cold Drinks',
-        water: 'Water',
+        shisha: 'Shisha',
         specialDrinks: 'Special Drinks',
         viewDetails: 'View',
         todaySales: 'Today Sales',
@@ -288,12 +288,13 @@ async function loadMenuItems() {
          if (!window.db) throw new Error('Firebase database not initialized');
 
          const snapshot = await window.db.collection('menuItems').get();
-         const items = [];
-         snapshot.forEach(doc => {
-             items.push({ id: doc.id, ...doc.data() });
-         });
+          const items = [];
+          snapshot.forEach(doc => {
+              const data = { id: doc.id, ...doc.data() };
+              if (data.category !== 'Water') items.push(data);
+          });
 
-         cachedMenuItems = items;
+          cachedMenuItems = items;
          console.log('Loaded items:', items.length);
 
           if (items.length === 0) {
@@ -307,7 +308,10 @@ async function loadMenuItems() {
          loadMenuItems._unsubscribe = window.db.collection('menuItems').onSnapshot(
              liveSnap => {
                  const liveItems = [];
-                 liveSnap.forEach(doc => liveItems.push({ id: doc.id, ...doc.data() }));
+                 liveSnap.forEach(doc => {
+                     const data = { id: doc.id, ...doc.data() };
+                     if (data.category !== 'Water') liveItems.push(data);
+                 });
                     cachedMenuItems = liveItems;
                     renderCategories(liveItems);
                     if (liveItems.length > 0 && _activeCategory) {
@@ -340,8 +344,8 @@ function renderCategories(items) {
      const lang = localStorage.getItem('selectedLang') || 'ku';
      const strings = i18n[lang] || i18n.en;
 
-     const categoryOrder = ['Coffee', 'Tea', 'Cold Drinks', 'Dessert', 'Water', 'Special Drinks'];
-     const foundCategories = items.length > 0 ? new Set(items.map(i => i.category).filter(Boolean)) : new Set(categoryOrder);
+     const categoryOrder = ['Coffee', 'Tea', 'Cold Drinks', 'Dessert', 'Shisha', 'Special Drinks'];
+     const foundCategories = items.length > 0 ? new Set(items.map(i => i.category).filter(Boolean).filter(c => c !== 'Water')) : new Set(categoryOrder);
      const ordered = categoryOrder.filter(c => foundCategories.has(c));
      foundCategories.forEach(c => { if (!ordered.includes(c)) ordered.push(c); });
 
@@ -350,7 +354,7 @@ function renderCategories(items) {
         'Tea': '<img class="cat-icon" src="https://cdn-icons-png.flaticon.com/128/1223/1223749.png" alt="Tea">',
         'Cold Drinks': '<img class="cat-icon" src="https://cdn-icons-png.flaticon.com/128/1113/1113278.png" alt="Cold Drinks">',
         'Dessert': '<img class="cat-icon" src="https://cdn-icons-png.flaticon.com/128/8346/8346809.png" alt="Dessert">',
-        'Water': '<img class="cat-icon" src="https://cdn-icons-png.flaticon.com/128/1113/1113278.png" alt="Water">',
+          'Shisha': '<img class="cat-icon" src="https://cdn-icons-png.flaticon.com/128/10170/10170651.png" alt="Shisha">',
         'Special Drinks': '<img class="cat-icon" src="https://cdn-icons-png.flaticon.com/128/5473/5473500.png" alt="Special Drinks">',
     };
 

@@ -1,4 +1,4 @@
-// Admin.js — Ali Cafe Admin Panel
+// Admin.js — Ali Coffee Admin Panel
 
 const orderItems = [];
 let activeItemModal = null;
@@ -34,6 +34,7 @@ document.addEventListener('DOMContentLoaded', function () {
 
     initAdminPanel();
     wireAdminLangButtons();
+    initSidebar();
 
     if (window.auth) {
         auth.onAuthStateChanged(function (user) {
@@ -59,6 +60,52 @@ function wireAdminLangButtons() {
     });
 }
 
+function initSidebar() {
+    var sidebar = document.getElementById('adminSidebar');
+    var hamburger = document.getElementById('sidebarHamburger');
+    var closeBtn = document.getElementById('sidebarClose');
+    var overlay = document.getElementById('sidebarOverlay');
+
+    if (!sidebar) return;
+
+    function openSidebar() {
+        sidebar.classList.add('open');
+        if (overlay) overlay.classList.add('active');
+        document.body.style.overflow = 'hidden';
+    }
+
+    function closeSidebar() {
+        sidebar.classList.remove('open');
+        if (overlay) overlay.classList.remove('active');
+        document.body.style.overflow = '';
+    }
+
+    if (hamburger) {
+        hamburger.addEventListener('click', function (e) {
+            e.stopPropagation();
+            openSidebar();
+        });
+    }
+
+    if (closeBtn) {
+        closeBtn.addEventListener('click', function () {
+            closeSidebar();
+        });
+    }
+
+    if (overlay) {
+        overlay.addEventListener('click', function () {
+            closeSidebar();
+        });
+    }
+
+    document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && sidebar.classList.contains('open')) {
+            closeSidebar();
+        }
+    });
+}
+
 function initAdminPanel() {
     var navButtons = document.querySelectorAll('.admin-nav-btn');
     navButtons.forEach(function (btn) {
@@ -71,6 +118,13 @@ function initAdminPanel() {
             if (headerTitle) {
                 var label = this.querySelector('span:last-child');
                 headerTitle.textContent = label ? label.textContent.trim() : this.textContent.trim();
+            }
+            var sidebar = document.getElementById('adminSidebar');
+            var overlay = document.getElementById('sidebarOverlay');
+            if (sidebar && sidebar.classList.contains('open')) {
+                sidebar.classList.remove('open');
+                if (overlay) overlay.classList.remove('active');
+                document.body.style.overflow = '';
             }
         });
     });
@@ -170,13 +224,13 @@ function loadRecentSales() {
             container.innerHTML = '<p style="color:#888;padding:16px;">' + S.noSalesYet + '</p>';
             return;
         }
-        var html = '<table class="admin-table"><thead><tr><th>' + S.time + '</th><th>' + S.items + '</th><th>' + S.total + ' (IQD)</th></tr></thead><tbody>';
+        var html = '<div class="table-responsive"><table class="admin-table"><thead><tr><th>' + S.time + '</th><th>' + S.items + '</th><th>' + S.total + ' (IQD)</th></tr></thead><tbody>';
         snap.forEach(function (doc) {
             var sale = doc.data();
             var cnt = sale.items ? sale.items.reduce(function (s, i) { return s + (i.quantity || 1); }, 0) : 0;
             html += '<tr><td>' + toDisplayTime(sale.timestamp) + '</td><td>' + cnt + ' items</td><td>' + (sale.total || 0) + ' IQD</td></tr>';
         });
-        html += '</tbody></table>';
+        html += '</tbody></table></div>';
         container.innerHTML = html;
     }).catch(function () {
         container.innerHTML = '<p style="color:#888;padding:16px;">' + S.noSalesData + '</p>';
@@ -216,7 +270,7 @@ function loadManageItems() {
                             '<option value="Tea">' + (S.tea || 'Tea') + '</option>' +
                             '<option value="Cold Drinks">' + (S.coldDrinks || 'Cold Drinks') + '</option>' +
                             '<option value="Dessert">' + (S.dessert || 'Dessert') + '</option>' +
-                            '<option value="Water">' + (S.water || 'Water') + '</option>' +
+                            '<option value="Shisha">' + (S.shisha || 'Shisha') + '</option>' +
                             '<option value="Special Drinks">' + (S.specialDrinks || 'Special Drinks') + '</option>' +
                         '</select></div>' +
                         '<div class="form-group"><label><input type="checkbox" id="itemAvailable" checked> ' + S.available + '</label></div>' +
@@ -232,17 +286,18 @@ function loadManageItems() {
 }
 
 function loadItemsList() {
-    var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
-    var catMap = {Coffee: S.coffee, Tea: S.tea, 'Cold Drinks': S.coldDrinks, Dessert: S.dessert, Water: S.water, 'Special Drinks': S.specialDrinks};
-    db.collection('menuItems').get().then(function (snap) {
-        var cats = new Set();
-        snap.forEach(function (d) { if (d.data().category) cats.add(d.data().category); });
-        var cf = document.getElementById('categoryFilter');
-        if (cf) {
-            cf.innerHTML = '<option value="all">' + S.allCategories + '</option>';
-            cats.forEach(function (c) { cf.innerHTML += '<option value="' + c + '">' + (catMap[c] || c) + '</option>'; });
-        }
-        renderItemsList(snap.docs);
+     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
+     var catMap = {Coffee: S.coffee, Tea: S.tea, 'Cold Drinks': S.coldDrinks, Dessert: S.dessert, Shisha: S.shisha, 'Special Drinks': S.specialDrinks};
+     db.collection('menuItems').get().then(function (snap) {
+         var cats = new Set();
+         var docs = [];
+         snap.forEach(function (d) { var data = d.data(); if (data.category && data.category !== 'Water') { cats.add(data.category); docs.push(d); } });
+         var cf = document.getElementById('categoryFilter');
+         if (cf) {
+             cf.innerHTML = '<option value="all">' + S.allCategories + '</option>';
+             cats.forEach(function (c) { cf.innerHTML += '<option value="' + c + '">' + (catMap[c] || c) + '</option>'; });
+         }
+         renderItemsList(docs);
     }).catch(function (e) {
         var el = document.getElementById('itemsList');
         if (el) el.innerHTML = '<p style="color:#C62828;">Error: ' + e.message + '</p>';
@@ -256,8 +311,8 @@ function renderItemsList(items) {
     if (items.length === 0) { list.innerHTML = '<p>' + S.noItemsFound + '</p>'; return; }
 
     var lang = localStorage.getItem('selectedLang') || 'ku';
-    var catMap = {Coffee: S.coffee, Tea: S.tea, 'Cold Drinks': S.coldDrinks, Dessert: S.dessert, Water: S.water, 'Special Drinks': S.specialDrinks};
-    var html = '<table class="admin-table"><thead><tr><th>Image</th><th>Name</th><th>' + S.category + '</th><th>' + S.price + '</th><th>' + S.available + '</th><th>Actions</th></tr></thead><tbody>';
+    var catMap = {Coffee: S.coffee, Tea: S.tea, 'Cold Drinks': S.coldDrinks, Dessert: S.dessert, Shisha: S.shisha, 'Special Drinks': S.specialDrinks};
+    var html = '<div class="table-responsive"><table class="admin-table"><thead><tr><th>Image</th><th>Name</th><th>' + S.category + '</th><th>' + S.price + '</th><th>' + S.available + '</th><th>Actions</th></tr></thead><tbody>';
     items.forEach(function (doc) {
         var item = doc.data();
         var name = item['name_' + lang] || item.name_en || 'Unnamed';
@@ -274,7 +329,7 @@ function renderItemsList(items) {
             '<button class="btn-danger btn-sm delete-item" data-id="' + doc.id + '">' + S.delete + '</button></td>' +
         '</tr>';
     });
-    html += '</tbody></table>';
+    html += '</tbody></table></div>';
     list.innerHTML = html;
 
     list.querySelectorAll('.edit-item').forEach(function (btn) {
@@ -461,7 +516,7 @@ function loadManageCategories() {
         {key: 'tea', val: 'Tea'},
         {key: 'coldDrinks', val: 'Cold Drinks'},
         {key: 'dessert', val: 'Dessert'},
-        {key: 'water', val: 'Water'},
+        {key: 'shisha', val: 'Shisha'},
         {key: 'specialDrinks', val: 'Special Drinks'}
     ];
     var catHtml = '';
@@ -548,16 +603,16 @@ function loadCashier() {
 }
 
 function loadCashierItems() {
-    db.collection('menuItems').where('available', '==', true).get().then(function (snap) {
-        var items = [];
-        snap.forEach(function (d) { items.push({ id: d.id, v: d.data() }); });
+     db.collection('menuItems').where('available', '==', true).get().then(function (snap) {
+         var items = [];
+         snap.forEach(function (d) { var data = d.data(); if (data.category !== 'Water') items.push({ id: d.id, v: data }); });
 
-        var grid = document.getElementById('cashierGrid');
+         var grid = document.getElementById('cashierGrid');
         var catBar = document.getElementById('cashierCatBar');
         if (!grid || !catBar) return;
 
         var lang = localStorage.getItem('selectedLang') || 'ku';
-        var catOrder = ['Coffee', 'Tea', 'Cold Drinks', 'Dessert', 'Water', 'Special Drinks'];
+        var catOrder = ['Coffee', 'Tea', 'Cold Drinks', 'Dessert', 'Shisha', 'Special Drinks'];
         var grouped = {};
         items.forEach(function (it) {
             var c = it.v.category || 'Other';
@@ -568,7 +623,7 @@ function loadCashierItems() {
         Object.keys(grouped).forEach(function (c) { if (ordered.indexOf(c) === -1) ordered.push(c); });
 
         var S2 = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
-        var catMap2 = {Coffee: S2.coffee, Tea: S2.tea, 'Cold Drinks': S2.coldDrinks, Dessert: S2.dessert, Water: S2.water, 'Special Drinks': S2.specialDrinks};
+        var catMap2 = {Coffee: S2.coffee, Tea: S2.tea, 'Cold Drinks': S2.coldDrinks, Dessert: S2.dessert, Shisha: S2.shisha, 'Special Drinks': S2.specialDrinks};
         var catHtml = '<button class="cashier-cat-btn active" data-cat="all">' + S2.allCategories + '</button>';
         ordered.forEach(function (c) { catHtml += '<button class="cashier-cat-btn" data-cat="' + c + '">' + (catMap2[c] || c) + '</button>'; });
         catBar.innerHTML = catHtml;
@@ -712,7 +767,7 @@ function loadSettings() {
     adminContent.innerHTML =
         '<div class="card">' +
             '<h2>' + S.settings + '</h2>' +
-            '<div class="form-group"><label>' + S.cafeName + '</label><input type="text" id="cafeName" value="Ali Cafe"></div>' +
+            '<div class="form-group"><label>' + S.cafeName + '</label><input type="text" id="cafeName" value="Ali Coffee"></div>' +
             '<div class="form-group"><label>' + S.currency + '</label><input type="text" value="IQD" readonly></div>' +
             '<button class="btn-primary" id="saveSettingsBtn">' + S.saveSettings + '</button>' +
         '</div>';

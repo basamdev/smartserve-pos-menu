@@ -1,4 +1,4 @@
-# Ali Cafe - QR Menu System & Admin Panel
+# Ali Coffee - QR Menu System & Admin Panel
 
 ## ✅ FIXES & IMPROVEMENTS MADE
 
