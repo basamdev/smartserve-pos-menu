@@ -47,6 +47,8 @@ document.addEventListener('DOMContentLoaded', function () {
 
 function wireAdminLangButtons() {
     var lang = localStorage.getItem('selectedLang') || 'ku';
+    document.documentElement.dir = (lang === 'ar' || lang === 'ku') ? 'rtl' : 'ltr';
+    document.documentElement.lang = lang;
     document.querySelectorAll('.admin-lang-btn').forEach(function (btn) {
         btn.classList.toggle('active', btn.getAttribute('data-lang') === lang);
         btn.addEventListener('click', function () {
@@ -55,6 +57,7 @@ function wireAdminLangButtons() {
             document.querySelectorAll('.admin-lang-btn').forEach(function (b) { b.classList.remove('active'); });
             this.classList.add('active');
             document.documentElement.dir = (l === 'ar' || l === 'ku') ? 'rtl' : 'ltr';
+            document.documentElement.lang = l;
             if (window.applyLanguageUI) applyLanguageUI(l);
         });
     });
@@ -427,6 +430,7 @@ function renderItemsList(items) {
 }
 
 function wireItemEvents() {
+    var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     var addBtn = document.getElementById('addItemBtn');
     if (addBtn) {
         addBtn.addEventListener('click', function () {
@@ -767,16 +771,20 @@ function loadCashier() {
     orderItems.length = 0;
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     var adminContent = document.getElementById('adminContent');
+    var orderCountBadge = '<span class="cashier-order-count" id="cashierOrderCount">0</span>';
     adminContent.innerHTML =
         '<div class="cashier-layout">' +
             '<div class="cashier-products">' +
                 '<div class="cashier-category-bar" id="cashierCatBar"></div>' +
                 '<div class="cashier-grid" id="cashierGrid"><div class="loading">Loading...</div></div>' +
             '</div>' +
-            '<div class="cashier-order">' +
+            '<div class="cashier-order" id="cashierOrderPanel">' +
                 '<div class="cashier-order-header">' +
-                    '<h3>' + S.currentOrder + '</h3>' +
-                    '<button class="btn-clear-order" id="clearOrderBtn">' + S.clear + '</button>' +
+                    '<h3>' + S.currentOrder + orderCountBadge + '</h3>' +
+                    '<div class="cashier-order-header-actions">' +
+                        '<button class="btn-clear-order" id="clearOrderBtn">' + S.clear + '</button>' +
+                        '<button class="cashier-order-toggle" id="cashierOrderToggle" aria-label="Toggle order">▲</button>' +
+                    '</div>' +
                 '</div>' +
                 '<div class="cashier-order-items" id="cashierOrderItems">' +
                     '<div class="cashier-empty">' + S.noItemsAdded + '</div>' +
@@ -790,6 +798,24 @@ function loadCashier() {
 
     loadCashierItems();
     wireCashierEvents();
+    wireCashierOrderToggle();
+}
+
+function wireCashierOrderToggle() {
+    var toggle = document.getElementById('cashierOrderToggle');
+    var panel = document.getElementById('cashierOrderPanel');
+    if (!toggle || !panel) return;
+    var collapsed = false;
+    toggle.addEventListener('click', function () {
+        collapsed = !collapsed;
+        panel.classList.toggle('collapsed', collapsed);
+        toggle.textContent = collapsed ? '▼' : '▲';
+    });
+    if (window.innerWidth <= 768) {
+        collapsed = true;
+        panel.classList.add('collapsed');
+        toggle.textContent = '▼';
+    }
 }
 
 function loadCashierItems() {
@@ -814,8 +840,20 @@ function loadCashierItems() {
 
         var S2 = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
         var catMap2 = {Coffee: S2.coffee, Tea: S2.tea, 'Cold Drinks': S2.coldDrinks, Dessert: S2.dessert, Shisha: S2.shisha, 'Special Drinks': S2.specialDrinks};
-        var catHtml = '<button class="cashier-cat-btn active" data-cat="all">' + S2.allCategories + '</button>';
-        ordered.forEach(function (c) { catHtml += '<button class="cashier-cat-btn" data-cat="' + c + '">' + (catMap2[c] || c) + '</button>'; });
+        var categoryIcons = {
+            'Coffee': '<img class="cashier-cat-icon" src="https://cdn-icons-png.flaticon.com/128/924/924514.png" alt="Coffee">',
+            'Tea': '<img class="cashier-cat-icon" src="https://cdn-icons-png.flaticon.com/128/1223/1223749.png" alt="Tea">',
+            'Cold Drinks': '<img class="cashier-cat-icon" src="https://cdn-icons-png.flaticon.com/128/1113/1113278.png" alt="Cold Drinks">',
+            'Dessert': '<img class="cashier-cat-icon" src="https://cdn-icons-png.flaticon.com/128/8346/8346809.png" alt="Dessert">',
+            'Shisha': '<img class="cashier-cat-icon" src="https://cdn-icons-png.flaticon.com/128/10170/10170651.png" alt="Shisha">',
+            'Special Drinks': '<img class="cashier-cat-icon" src="https://cdn-icons-png.flaticon.com/128/5473/5473500.png" alt="Special Drinks">',
+        };
+        var catHtml = '<button class="cashier-cat-btn active" data-cat="all"><span class="cashier-cat-label">' + S2.allCategories + '</span></button>';
+        ordered.forEach(function (c) {
+            var icon = categoryIcons[c] || '';
+            var label = catMap2[c] || c;
+            catHtml += '<button class="cashier-cat-btn" data-cat="' + c + '">' + icon + '<span class="cashier-cat-label">' + label + '</span></button>';
+        });
         catBar.innerHTML = catHtml;
 
         function renderGrid(filterCat) {
@@ -893,9 +931,18 @@ function addToOrder(id, name, price) {
 }
 
 function updateOrderDisplay() {
+    var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     var container = document.getElementById('cashierOrderItems');
     var totalEl = document.getElementById('cashierTotal');
+    var countEl = document.getElementById('cashierOrderCount');
     if (!container) return;
+
+    var totalQty = 0;
+    if (countEl) {
+        orderItems.forEach(function (i) { totalQty += i.quantity; });
+        countEl.textContent = totalQty;
+        countEl.style.display = totalQty > 0 ? '' : 'none';
+    }
 
     if (orderItems.length === 0) {
         container.innerHTML = '<div class="cashier-empty">' + S.noItemsAdded + '</div>';

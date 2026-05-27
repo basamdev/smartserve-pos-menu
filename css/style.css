@@ -1092,7 +1092,6 @@ body.light-mode .card-view-hint {
 }
 
 .price-currency {
-    font-size: 0.7rem;
     font-weight: 600;
     color: #A0A0A0;
     letter-spacing: 0.06em;
@@ -1531,6 +1530,18 @@ body.light-mode .detail-backdrop {
     align-items: center;
     justify-content: center;
     transition: all 0.2s ease;
+    padding: 0;
+}
+
+.menu-fav-btn .fav-icon {
+    width: 16px;
+    height: 16px;
+    transition: all 0.2s ease;
+}
+
+.menu-fav-btn .fav-icon.fav-filled {
+    color: #D4AF37;
+    filter: drop-shadow(0 0 4px rgba(212,175,55,0.5));
 }
 
 .menu-fav-btn:hover {
@@ -1539,7 +1550,12 @@ body.light-mode .detail-backdrop {
 }
 
 .menu-fav-btn.active {
-    color: #E91E63;
+    color: #D4AF37;
+}
+
+.menu-fav-btn.active .fav-icon {
+    color: #D4AF37;
+    filter: drop-shadow(0 0 6px rgba(212,175,55,0.6));
 }
 
 .menu-rating {
@@ -1573,7 +1589,11 @@ body.light-mode .detail-backdrop {
     .menu-fav-btn {
         width: 28px;
         height: 28px;
-        font-size: 0.8rem;
+    }
+
+    .menu-fav-btn .fav-icon {
+        width: 14px;
+        height: 14px;
     }
 }
 

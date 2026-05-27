@@ -41,7 +41,7 @@
                     <span class="icon-moon">🌙</span>
                     <span class="icon-sun">☀️</span>
                 </button>
-                <a href="admin.html" class="btn-nav-admin" data-i18n="admin">Admin</a>
+
             </div>
         </div>
     </nav>
@@ -126,6 +126,27 @@
                 }
             }
         }
+    </script>
+    <script>
+        (function () {
+            var logo = document.querySelector('nav .logo');
+            if (!logo) return;
+            var clicks = 0, timer = null;
+            logo.addEventListener('click', function (e) {
+                e.preventDefault();
+                clicks++;
+                if (clicks === 1) {
+                    timer = setTimeout(function () {
+                        clicks = 0;
+                        window.location.href = logo.getAttribute('href') || 'index.html';
+                    }, 350);
+                } else if (clicks === 2) {
+                    clearTimeout(timer);
+                    clicks = 0;
+                    window.location.href = 'login.html';
+                }
+            });
+        })();
     </script>
 </body>
 </html>

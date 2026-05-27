@@ -127,7 +127,7 @@ const i18n = {
         unnamed: 'بێ ناو',
         editItem: 'دەستکاری ئایتم',
         addNewItem: '+ زیادکردنی ئایتمی نوێ',
-        sold: 'فرۆشراوە',
+        sold: 'دانە',
         itemsCount: ' ئایتم',
         unknown: 'نەناسراو',
         siteName: 'عەلی کافێ',
@@ -165,18 +165,18 @@ const i18n = {
         selectMonth: 'اختر الشهر',
         dailySales: 'المبيعات اليومية',
         noSalesData: 'لا توجد بيانات مبيعات',
-        january: 'يناير',
-        february: 'فبراير',
-        march: 'مارس',
-        april: 'أبريل',
-        may: 'مايو',
-        june: 'يونيو',
-        july: 'يوليو',
-        august: 'أغسطس',
-        september: 'سبتمبر',
-        october: 'أكتوبر',
-        november: 'نوفمبر',
-        december: 'ديسمبر',
+        january: 'كانون الثاني',
+        february: 'شباط',
+        march: 'آذار',
+        april: 'نيسان',
+        may: 'آيار',
+        june: 'حزيران',
+        july: 'تموز',
+        august: 'آب',
+        september: 'أيلول',
+        october: 'تشرين الأول',
+        november: 'تشرين الثاني',
+        december: 'كانون الأول',
         week: 'أسبوع',
         totalSales: 'إجمالي المبيعات',
         weeklySales: 'مبيعات الأسبوع',
@@ -232,7 +232,7 @@ const i18n = {
         unnamed: 'بلا اسم',
         editItem: 'تعديل العنصر',
         addNewItem: '+ إضافة عنصر جديد',
-        sold: 'مباع',
+        sold: 'قطعة',
         itemsCount: ' عناصر',
         unknown: 'غير معروف',
         siteName: 'علي كافيه',
@@ -537,7 +537,7 @@ function renderMenuItems(items) {
             <div class="menu-card-img-wrapper">
                 <img src="${imageUrl}" alt="${name}" class="menu-card-img" loading="lazy"
                      onerror="this.onerror=null;this.src='${fallbackImage}';">
-                <div class="menu-card-badge">${item.category || ''}</div>
+                <div class="menu-card-badge">${strings[item.category.replace(/\s+/g, '').charAt(0).toLowerCase() + item.category.replace(/\s+/g, '').slice(1)] || item.category || ''}</div>
             </div>
             <div class="menu-card-body">
                 <h2 class="menu-card-title">${name}</h2>
@@ -724,9 +724,6 @@ function applyLanguageUI(lang) {
 }
 
 function updateAdminPanelText(strings) {
-    var adminHeader = document.querySelector('.admin-header h1');
-    if (adminHeader) adminHeader.textContent = strings.dashboard;
-
     var navMap = {
         dashboard: strings.dashboard,
         items: strings.manageItems,
@@ -736,6 +733,12 @@ function updateAdminPanelText(strings) {
         settings: strings.settings,
         logout: strings.logout
     };
+    var activeBtn = document.querySelector('.admin-nav-btn.active');
+    var adminHeader = document.querySelector('.admin-header h1');
+    if (adminHeader && activeBtn) {
+        var activeSection = activeBtn.getAttribute('data-section');
+        if (navMap[activeSection]) adminHeader.textContent = navMap[activeSection];
+    }
     document.querySelectorAll('.admin-nav-btn').forEach(function (item) {
         var section = item.getAttribute('data-section');
         if (navMap[section]) {
@@ -822,16 +825,20 @@ function renderMenuCardsWithFeatures() {
 
         var favBtn = document.createElement('button');
         favBtn.className = 'menu-fav-btn';
-        favBtn.textContent = '♡';
+        favBtn.innerHTML = '<svg class="fav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
         if (itemId && MENU_FEATURES.isFav(itemId)) {
-            favBtn.textContent = '♥';
+            favBtn.innerHTML = '<svg class="fav-icon fav-filled" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
             favBtn.classList.add('active');
         }
         favBtn.addEventListener('click', function(e) {
             e.stopPropagation();
             if (itemId) {
                 var added = MENU_FEATURES.toggleFav(itemId);
-                this.textContent = added ? '♥' : '♡';
+                if (added) {
+                    this.innerHTML = '<svg class="fav-icon fav-filled" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
+                } else {
+                    this.innerHTML = '<svg class="fav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
+                }
                 this.classList.toggle('active', added);
             }
         });
