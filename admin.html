@@ -5,16 +5,28 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Ali Coffee - Admin Panel</title>
     <link rel="manifest" href="manifest.json">
-    <link rel="icon" type="image/png" sizes="512x512" href="images/ali-cafe-logo-circular.png">
-    <link rel="apple-touch-icon" href="images/ali-cafe-logo-circular.png">
-    <meta name="apple-mobile-web-app-capable" content="yes">
+    <link rel="icon" type="image/jpeg" href="assets/ali-new-logo.jpg">
+    <link rel="apple-touch-icon" href="assets/ali-new-logo.jpg">
+    <link rel="apple-touch-icon" sizes="180x180" href="assets/ali-new-logo.jpg">
+    <meta name="msapplication-TileImage" content="assets/ali-new-logo.jpg">
+    <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Ali Coffee">
     <meta name="theme-color" content="#D4AF37">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/admin.css">
+    <link rel="stylesheet" href="css/admin.css?v=19">
+    <script>
+        (function () {
+            try {
+                var a = localStorage.getItem('adminAccent') || 'gold';
+                document.documentElement.setAttribute('data-accent', a);
+            } catch (e) {
+                document.documentElement.setAttribute('data-accent', 'gold');
+            }
+        })();
+    </script>
 </head>
 <body>
     <div class="admin-container admin-layout">
@@ -42,6 +54,9 @@
                 </button>
                 <button class="nav-item admin-nav-btn" data-section="cashier">
                     <span class="nav-item-icon">🛒</span><span data-i18n="cashier">Cashier</span>
+                </button>
+                <button class="nav-item admin-nav-btn" data-section="expenses">
+                    <span class="nav-item-icon">📉</span><span data-i18n="expenses">خەرجیەکان</span>
                 </button>
                 <button class="nav-item admin-nav-btn" data-section="settings">
                     <span class="nav-item-icon">⚙️</span><span data-i18n="settings">Settings</span>
@@ -74,9 +89,9 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
-    <script src="js/firebase.js"></script>
-    <script src="js/app.js"></script>
-    <script src="js/admin.js"></script>
+    <script src="js/firebase.js?v=20"></script>
+    <script src="js/app.js?v=20"></script>
+    <script src="js/admin.js?v=22"></script>
     <script>
         function fallbackLogo(img) {
             img.onerror = null;

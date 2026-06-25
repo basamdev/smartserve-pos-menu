@@ -60,10 +60,22 @@ auth.onAuthStateChanged((user) => {
     }
 });
 
-// Firestore settings (v8 compat)
+// Enable Firestore offline persistence with multi-tab support so having the
+// site open in more than one tab doesn't throw "failed-precondition".
 try {
-    db.settings({ ignoreUndefinedProperties: true });
-    console.log('Firestore settings applied');
+    db.enablePersistence({ synchronizeTabs: true })
+        .then(() => {
+            console.log('Firestore offline persistence enabled (multi-tab)');
+        })
+        .catch((error) => {
+            if (error.code === 'failed-precondition') {
+                console.log('Persistence unavailable (another tab owns it) — running online only.');
+            } else if (error.code === 'unimplemented') {
+                console.log('Persistence not supported by browser');
+            } else {
+                console.error('Persistence error:', error);
+            }
+        });
 } catch (error) {
-    console.log('Firestore settings error:', error.message);
+    console.error('Persistence setup error:', error);
 }

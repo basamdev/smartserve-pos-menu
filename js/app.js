@@ -8,14 +8,19 @@ window.openMenu = function (lang) {
 
 document.addEventListener('DOMContentLoaded', function () {
     try {
-        const savedLang = localStorage.getItem('selectedLang') || 'ku';
+        const urlLang = new URLSearchParams(window.location.search).get('lang');
+        const savedLang = urlLang || localStorage.getItem('selectedLang') || 'ku';
+        if (urlLang) localStorage.setItem('selectedLang', urlLang);
         setActiveLanguage(savedLang);
         applyLanguageUI(savedLang);
         setupThemeToggle();
+        setupOfflineDetection();
 
-        if (window.location.pathname.includes('menu.html')) {
+        if (document.getElementById('menuGrid')) {
             loadMenuItems();
             setupLanguageButtons();
+            initHeroTitleSequence();
+            setupInstallTutorial();
         }
     } catch (e) {
         console.error('Init error:', e);
@@ -84,6 +89,7 @@ const i18n = {
         addNewItem: '+ زیادکردنی ئایتمی نوێ',
         searchItems: 'گەڕان بۆ ئایتم...',
         allCategories: 'هەموو بەشەکان',
+        allItems: 'هەموو',
         select: 'هەڵبژێرە',
         kurdishName: 'ناو بە کوردی',
         arabicName: 'ناو بە عەرەبی',
@@ -131,6 +137,91 @@ const i18n = {
         itemsCount: ' ئایتم',
         unknown: 'نەناسراو',
         siteName: 'عەلی کافێ',
+        addCategory: '+ زیادکردنی بەشی نوێ',
+        categoryNameKu: 'ناوی بەش بە کوردی',
+        categoryNameAr: 'ناوی بەش بە عەرەبی',
+        categoryNameEn: 'ناوی بەش بە ئینگلیزی',
+        categoryImage: 'بەستەری وێنەی بەش',
+        saveCategory: 'پاشەکەوتکردنی بەش',
+        editCategory: 'دەستکاری بەش',
+        deleteCategory: 'سڕینەوەی بەش',
+        deleteCategoryConfirm: 'دڵنیایت لە سڕینەوەی ئەم بەشە؟ هەموو ئایتمەکانی ئەم بەشە دەسڕێنەوە.',
+        categorySaved: 'بەش پاشەکەوت کرا!',
+        categoryError: 'هەڵە لە بەش: ',
+        createNewCategory: '+ دروستکردنی بەشی نوێ',
+        likeItem: 'پەسەندکردن',
+        unlikeItem: 'لابردنی پەسەندکردن',
+        printReceipt: 'چاپ',
+        offlineMode: 'بێ هێڵ — گۆڕانکارییەکان دەهێنرێنە ڕێک',
+        backOnline: 'گەڕایەوە سەرهێڵ — ڕێکخستن',
+        resetAllData: 'سڕینەوەی هەموو داتاکان',
+        resetConfirm: 'دڵنیایت لە سڕینەوەی هەموو داتاکان؟ ئەم کارە ناتوانرێت گەڕاوەتەوە!',
+        resetSuccess: 'هەموو داتاکان سڕانەوە!',
+        resetError: 'هەڵە لە سڕینەوە: ',
+        expenses: 'خەرجیەکان',
+        addExpense: '+ زیادکردنی خەرجی',
+        expenseName: 'ناوی خەرجی',
+        expensePrice: 'نرخ (IQD)',
+        expenseDate: 'بەروار',
+        expenseTime: 'کات',
+        expenseSaved: 'خەرجی پاشەکەوت کرا!',
+        expenseError: 'هەڵە لە خەرجی: ',
+        expenseDeleted: 'خەرجی سڕایەوە!',
+        totalExpenses: 'کۆی خەرجیەکان',
+        todayExpenses: 'خەرجیەکانی ئەمڕۆ',
+        monthlyExpenses: 'خەرجیەکانی ئەم مانگە',
+        netIncome: 'داتای خاو',
+        noExpenses: 'هیچ خەرجیەک نییە',
+        deleteExpenseConfirm: 'دڵنیایت لە سڕینەوەی ئەم خەرجیە؟',
+        water: 'ئاو',
+        milk: 'شیر',
+        coffee: 'قاوە',
+        electric: 'کارەبا',
+        gas: 'گاز',
+        rent: 'کرێ',
+        salary: 'مووچە',
+        other: 'هیتر',
+        cart: 'سەبەتە',
+        addToCart: '+ زیادکردن بۆ سەبەتە',
+        remove: 'لابردن',
+        cartEmpty: 'سەبەتە بەتاڵە',
+        cartTotal: 'کۆی گشتی',
+        sendWhatsApp: 'ناردن بە واتساپ',
+        whatsappPhone: 'ژمارەی واتساپ',
+        phonePlaceholder: '٩٦٤٧٧٠١٢٣٤٥٦٧',
+        orderSent: 'داواکاری نێردرا!',
+        quantity: 'ژمارە',
+        themeWhite: 'سپی',
+        themeCream: 'کرێم',
+        themeCoffee: 'قاوە',
+        themeGold: 'زێڕین',
+        themeMocha: 'موکا',
+        themeDark: 'تاریک',
+        cafeOpen: 'ئێستا کراوەیە',
+        cafeClosed: 'ئێستا داخراوە',
+        cafeContact: 'پەیوەندی',
+        cafeCall: 'پەیوەندی',
+        cafeShare: 'هاوبەشکردن',
+        cafeLocation: 'شوێن',
+        cafeHours: 'کاتی کردنەوە',
+        cafeHoursValue: 'ڕۆژانە: ٢:٠٠ دوای نیوەڕۆ — ٢:٠٠ بەیانی',
+        cafeFollowUs: 'فۆڵۆومان بکەن',
+        cafeInfoTitle: 'عەلی کافێ',
+        linkCopied: 'بەستەر کۆپی کرا!',
+        installTitle: 'زیادکردن بۆ سکرینە سەرەکی',
+        installSubtitle: 'مێنووکە وەک ئەپێکی مۆبایل بەکاربهێنە — پێویست بە App Store نییە',
+        installIos: 'iPhone (iOS)',
+        installAndroid: 'Android',
+        installGotIt: 'تێگەیشتم',
+        installDontShow: 'دووبارە پیشان مەدە',
+        installShowHelp: 'زیادکردن بۆ سکرین',
+        installNow: 'ئێستا دابمەزرێنە',
+        iosStep1: 'دوگمەی Share (↗) لە خوارەوەی Safari دابگرە',
+        iosStep2: '«Add to Home Screen» هەڵبژێرە',
+        iosStep3: '«Add» دابگرە — ئایکۆنی Ali Coffee لەسەر سکرین دەردەکەوێت',
+        androidStep1: 'Menu (⋮) لە گۆشەی سەرەوەی Chrome دابگرە',
+        androidStep2: '«Add to Home screen» یان «Install app» هەڵبژێرە',
+        androidStep3: '«Add» دابگرە — وەک ئەپێکی ڕاستەقینە دەکرێتەوە',
     },
     ar: {
         menuTitle: 'قائمتنا',
@@ -189,6 +280,7 @@ const i18n = {
         addNewItem: '+ إضافة عنصر جديد',
         searchItems: 'البحث عن عناصر...',
         allCategories: 'جميع الفئات',
+        allItems: 'الكل',
         select: 'اختر',
         kurdishName: 'الاسم الكردي',
         arabicName: 'الاسم العربي',
@@ -236,6 +328,91 @@ const i18n = {
         itemsCount: ' عناصر',
         unknown: 'غير معروف',
         siteName: 'علي كافيه',
+        addCategory: '+ إضافة فئة جديدة',
+        categoryNameKu: 'اسم الفئة بالكردية',
+        categoryNameAr: 'اسم الفئة بالعربية',
+        categoryNameEn: 'اسم الفئة بالإنجليزية',
+        categoryImage: 'رابط صورة الفئة',
+        saveCategory: 'حفظ الفئة',
+        editCategory: 'تعديل الفئة',
+        deleteCategory: 'حذف الفئة',
+        deleteCategoryConfirm: 'هل أنت متأكد من حذف هذه الفئة؟ سيتم حذف جميع العناصر في هذه الفئة.',
+        categorySaved: 'تم حفظ الفئة!',
+        categoryError: 'خطأ في الفئة: ',
+        createNewCategory: '+ إنشاء فئة جديدة',
+        likeItem: 'إعجاب',
+        unlikeItem: 'إلغاء الإعجاب',
+        printReceipt: 'طباعة',
+        offlineMode: 'بدون إنترنت — ستتم المزامنة',
+        backOnline: 'عاد الاتصال — تتم المزامنة',
+        resetAllData: 'حذف جميع البيانات',
+        resetConfirm: 'هل أنت متأكد من حذف جميع البيانات؟ لا يمكن التراجع عن هذا!',
+        resetSuccess: 'تم حذف جميع البيانات!',
+        resetError: 'خطأ في الحذف: ',
+        expenses: 'المصروفات',
+        addExpense: '+ إضافة مصروف',
+        expenseName: 'اسم المصروف',
+        expensePrice: 'السعر (IQD)',
+        expenseDate: 'التاريخ',
+        expenseTime: 'الوقت',
+        expenseSaved: 'تم حفظ المصروف!',
+        expenseError: 'خطأ في المصروف: ',
+        expenseDeleted: 'تم حذف المصروف!',
+        totalExpenses: 'إجمالي المصروفات',
+        todayExpenses: 'مصروفات اليوم',
+        monthlyExpenses: 'مصروفات الشهر',
+        netIncome: 'الدخل الصافي',
+        noExpenses: 'لا توجد مصروفات',
+        deleteExpenseConfirm: 'هل أنت متأكد من حذف هذا المصروف؟',
+        water: 'ماء',
+        milk: 'حليب',
+        coffee: 'قهوة',
+        electric: 'كهرباء',
+        gas: 'غاز',
+        rent: 'إيجار',
+        salary: 'راتب',
+        other: 'أخرى',
+        cart: 'السلة',
+        addToCart: '+ إضافة للسلة',
+        remove: 'إزالة',
+        cartEmpty: 'السلة فارغة',
+        cartTotal: 'الإجمالي',
+        sendWhatsApp: 'إرسال واتساب',
+        whatsappPhone: 'رقم واتساب',
+        phonePlaceholder: '٩٦٤٧٧٠١٢٣٤٥٦٧',
+        orderSent: 'تم إرسال الطلب!',
+        quantity: 'الكمية',
+        themeWhite: 'أبيض',
+        themeCream: 'كريمي',
+        themeCoffee: 'قهوة',
+        themeGold: 'ذهبي',
+        themeMocha: 'موكا',
+        themeDark: 'داكن',
+        cafeOpen: 'مفتوح الآن',
+        cafeClosed: 'مغلق الآن',
+        cafeContact: 'تواصل',
+        cafeCall: 'اتصال',
+        cafeShare: 'مشاركة',
+        cafeLocation: 'الموقع',
+        cafeHours: 'ساعات العمل',
+        cafeHoursValue: 'يومياً: ٢:٠٠ مساءً — ٢:٠٠ صباحاً',
+        cafeFollowUs: 'تابعنا',
+        cafeInfoTitle: 'علي كافيه',
+        linkCopied: 'تم نسخ الرابط!',
+        installTitle: 'إضافة إلى الشاشة الرئيسية',
+        installSubtitle: 'استخدم القائمة كتطبيق على الهاتف — بدون App Store',
+        installIos: 'iPhone (iOS)',
+        installAndroid: 'Android',
+        installGotIt: 'فهمت',
+        installDontShow: 'لا تظهر مرة أخرى',
+        installShowHelp: 'إضافة للشاشة الرئيسية',
+        installNow: 'تثبيت الآن',
+        iosStep1: 'اضغط زر Share (↗) أسفل Safari',
+        iosStep2: 'اختر «Add to Home Screen»',
+        iosStep3: 'اضغط «Add» — يظهر أيقونة Ali Coffee على الشاشة',
+        androidStep1: 'اضغط القائمة (⋮) أعلى Chrome',
+        androidStep2: 'اختر «Add to Home screen» أو «Install app»',
+        androidStep3: 'اضغط «Add» — يفتح كتطبيق حقيقي',
     },
     en: {
         menuTitle: 'Our Menu',
@@ -294,6 +471,7 @@ const i18n = {
         addNewItem: '+ Add New Item',
         searchItems: 'Search items...',
         allCategories: 'All Categories',
+        allItems: 'All',
         select: 'Select',
         kurdishName: 'Kurdish Name',
         arabicName: 'Arabic Name',
@@ -357,6 +535,92 @@ const i18n = {
         itemsCount: ' items',
         unknown: 'unknown',
         siteName: 'Ali Coffee',
+        addCategory: '+ Add New Category',
+        categoryNameKu: 'Category Name (Kurdish)',
+        categoryNameAr: 'Category Name (Arabic)',
+        categoryNameEn: 'Category Name (English)',
+        categoryImage: 'Category Image URL',
+        saveCategory: 'Save Category',
+        editCategory: 'Edit Category',
+        deleteCategory: 'Delete Category',
+        deleteCategoryConfirm: 'Are you sure you want to delete this category? All items in this category will be deleted.',
+        categorySaved: 'Category saved!',
+        categoryError: 'Category error: ',
+        createNewCategory: '+ Create New Category',
+        likeItem: 'Like',
+        unlikeItem: 'Unlike',
+        printReceipt: 'Print',
+        offlineMode: 'Offline Mode — changes will sync',
+        backOnline: 'Back online — syncing',
+        onlineMode: 'Online',
+        resetAllData: 'Reset All Data',
+        resetConfirm: 'Are you sure you want to delete ALL data? This cannot be undone!',
+        resetSuccess: 'All data has been deleted!',
+        resetError: 'Error resetting: ',
+        expenses: 'Expenses',
+        addExpense: '+ Add Expense',
+        expenseName: 'Expense Name',
+        expensePrice: 'Price (IQD)',
+        expenseDate: 'Date',
+        expenseTime: 'Time',
+        expenseSaved: 'Expense saved!',
+        expenseError: 'Error: ',
+        expenseDeleted: 'Expense deleted!',
+        totalExpenses: 'Total Expenses',
+        todayExpenses: 'Today Expenses',
+        monthlyExpenses: 'Monthly Expenses',
+        netIncome: 'Net Income',
+        noExpenses: 'No expenses yet',
+        deleteExpenseConfirm: 'Are you sure you want to delete this expense?',
+        water: 'Water',
+        milk: 'Milk',
+        coffee: 'Coffee',
+        electric: 'Electricity',
+        gas: 'Gas',
+        rent: 'Rent',
+        salary: 'Salary',
+        other: 'Other',
+        cart: 'Cart',
+        addToCart: '+ Add to Cart',
+        remove: 'Remove',
+        cartEmpty: 'Cart is empty',
+        cartTotal: 'Total',
+        sendWhatsApp: 'Send via WhatsApp',
+        whatsappPhone: 'WhatsApp Number',
+        phonePlaceholder: '+9647701234567',
+        orderSent: 'Order sent!',
+        quantity: 'Qty',
+        themeWhite: 'White',
+        themeCream: 'Cream',
+        themeCoffee: 'Coffee',
+        themeGold: 'Gold',
+        themeMocha: 'Mocha',
+        themeDark: 'Dark',
+        cafeOpen: 'Open now',
+        cafeClosed: 'Closed now',
+        cafeContact: 'Contact',
+        cafeCall: 'Call',
+        cafeShare: 'Share',
+        cafeLocation: 'Location',
+        cafeHours: 'Opening hours',
+        cafeHoursValue: 'Daily: 2:00 PM — 2:00 AM',
+        cafeFollowUs: 'Follow us',
+        cafeInfoTitle: 'Ali Coffee',
+        linkCopied: 'Link copied!',
+        installTitle: 'Add to Home Screen',
+        installSubtitle: 'Use the menu like a mobile app — no App Store needed',
+        installIos: 'iPhone (iOS)',
+        installAndroid: 'Android',
+        installGotIt: 'Got it',
+        installDontShow: 'Don\'t show again',
+        installShowHelp: 'Add to Home Screen',
+        installNow: 'Install now',
+        iosStep1: 'Tap Share (↗) at the bottom of Safari',
+        iosStep2: 'Choose «Add to Home Screen»',
+        iosStep3: 'Tap «Add» — Ali Coffee icon appears on your home screen',
+        androidStep1: 'Tap Menu (⋮) at the top of Chrome',
+        androidStep2: 'Choose «Add to Home screen» or «Install app»',
+        androidStep3: 'Tap «Add» — opens like a real app',
     }
 };
 
@@ -366,12 +630,122 @@ const i18n = {
 
 let cachedMenuItems = [];
 let _activeCategory = null;
+const ALL_CATEGORY_ID = '__all__';
 let _renderSerial = 0;
 let _currentDetailItem = null;
+let isOffline = false;
+let cartItems = [];
+let _lastMenuItemsSignature = '';
+let _menuUiReady = false;
 
 /* ========================================
    Menu Loading
    ======================================== */
+
+function parseMenuItemsFromSnapshot(snapshot) {
+    const items = [];
+    snapshot.forEach(doc => {
+        const data = { id: doc.id, ...doc.data() };
+        if (data.category !== 'Water') items.push(data);
+    });
+    return items;
+}
+
+function menuItemsSignature(items) {
+    if (!items || !items.length) return '';
+    return items.map(function (i) {
+        return i.id + '|' + (i.available === false ? '0' : '1') + '|' + (i.price || 0) +
+            '|' + (i.category || '') + '|' + (i.image || '') +
+            '|' + (i.name_ku || '') + '|' + (i.name_ar || '') + '|' + (i.name_en || '');
+    }).sort().join(';');
+}
+
+function computeCategoryBarSig(categories, items, lang) {
+    var prefix = isEmenuPage() ? 'all|' : '';
+    if (categories.length > 0) {
+        return prefix + categories.map(function (c) { return c.id; }).join('|') + '|' + lang;
+    }
+    var found = items.length > 0
+        ? new Set(items.map(function (i) { return i.category; }).filter(Boolean).filter(function (c) { return c !== 'Water'; }))
+        : new Set();
+    return prefix + 'fb|' + Array.from(found).sort().join('|') + '|' + lang;
+}
+
+async function loadCategoriesFromFirebase() {
+    if (!window.db) return false;
+    try {
+        const catSnap = await window.db.collection('categories').get();
+        const categories = [];
+        catSnap.forEach(doc => {
+            categories.push({ id: doc.id, data: doc.data() });
+        });
+        const sig = categories.map(function (c) { return c.id; }).join('|');
+        const prev = localStorage.getItem('cachedCategoriesSig') || '';
+        localStorage.setItem('cachedCategories', JSON.stringify(categories));
+        localStorage.setItem('cachedCategoriesSig', sig);
+        return prev !== sig;
+    } catch (e) {
+        console.error('Error loading categories:', e);
+        return false;
+    }
+}
+
+function applyMenuItemsUpdate(items, options) {
+    options = options || {};
+    const sig = menuItemsSignature(items);
+    if (sig === _lastMenuItemsSignature && !options.force) return;
+    _lastMenuItemsSignature = sig;
+
+    cachedMenuItems = items;
+    localStorage.setItem('cachedMenuItems', JSON.stringify(items));
+
+    const container = document.getElementById('menuGrid');
+    if (!container) return;
+
+    if (!_menuUiReady) {
+        if (container.querySelector('.loading-menu')) {
+            container.innerHTML = '';
+        }
+        renderCategories(items, { autoSelect: true, forceFirst: true, forceRebuild: true });
+        _menuUiReady = true;
+        return;
+    }
+
+    const scroll = document.getElementById('categoryScroll');
+    const prevCatSig = scroll ? scroll.dataset.categorySig : '';
+    renderCategories(items, { autoSelect: false, forceRebuild: false });
+    const catBarChanged = scroll && scroll.dataset.categorySig !== prevCatSig;
+
+    if (catBarChanged) {
+        autoSelectCategoryAfterRender(true);
+    } else if (_activeCategory) {
+        switchCategory(_activeCategory, { silent: true });
+    } else if (items.length > 0) {
+        autoSelectCategoryAfterRender(true);
+    } else {
+        container.innerHTML = '';
+    }
+}
+
+function showCachedMenuIfAvailable() {
+    const cached = localStorage.getItem('cachedMenuItems');
+    if (!cached) return false;
+
+    try {
+        const items = JSON.parse(cached);
+        if (!items.length) return false;
+
+        cachedMenuItems = items;
+        _lastMenuItemsSignature = menuItemsSignature(items);
+        renderCategories(items, { autoSelect: true, forceRebuild: true });
+        _menuUiReady = true;
+        console.log('Shown from cache:', items.length);
+        return true;
+    } catch (e) {
+        console.error('Error parsing cache:', e);
+        return false;
+    }
+}
 
 async function loadMenuItems() {
     if (loadMenuItems._inProgress) return;
@@ -380,58 +754,69 @@ async function loadMenuItems() {
     const container = document.getElementById('menuGrid');
     const lang = localStorage.getItem('selectedLang') || 'ku';
     const strings = i18n[lang] || i18n.en;
-     if (!container) return;
+    if (!container) return;
 
-    container.innerHTML = `<div class="loading-menu">${strings.loadingMenu}</div>`;
+    const hadCache = showCachedMenuIfAvailable();
+    if (!hadCache) {
+        container.innerHTML = `<div class="loading-menu">${strings.loadingMenu}</div>`;
+    }
 
     try {
-         if (!window.db) throw new Error('Firebase database not initialized');
+        if (!window.db) throw new Error('Firebase database not initialized');
 
-         const snapshot = await window.db.collection('menuItems').get();
-          const items = [];
-          snapshot.forEach(doc => {
-              const data = { id: doc.id, ...doc.data() };
-              if (data.category !== 'Water') items.push(data);
-          });
+        const categoriesChanged = await loadCategoriesFromFirebase();
+        if (categoriesChanged && cachedMenuItems.length > 0) {
+            renderCategories(cachedMenuItems, { autoSelect: false, forceRebuild: true });
+        }
 
-          cachedMenuItems = items;
-         console.log('Loaded items:', items.length);
-
-          if (items.length === 0) {
-              container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">☕</div><p>${strings.noItems}</p></div>`;
-          }
-
-          renderCategories(items);
-
-          // Realtime listener
-         if (loadMenuItems._unsubscribe) loadMenuItems._unsubscribe();
-         loadMenuItems._unsubscribe = window.db.collection('menuItems').onSnapshot(
-             liveSnap => {
-                 const liveItems = [];
-                 liveSnap.forEach(doc => {
-                     const data = { id: doc.id, ...doc.data() };
-                     if (data.category !== 'Water') liveItems.push(data);
-                 });
-                      cachedMenuItems = liveItems;
-                      renderCategories(liveItems);
-                      if (liveItems.length > 0 && _activeCategory) {
-                          var filtered = liveItems.filter(i => i.category === _activeCategory);
-                          renderMenuItems(filtered);
-                          renderMenuCardsWithFeatures();
-                      } else if (liveItems.length > 0) {
-                          const grid = document.getElementById('menuGrid');
-                          if (grid) grid.innerHTML = '';
-                      }
-             },
-             err => console.warn('[realtime] error:', err.message)
-         );
-
-     } catch (error) {
-         console.error('Error loading menu:', error);
-         container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>${strings.errorLoadingMenu}</p><p style="font-size:0.8rem;margin-top:8px">${error.message}</p></div>`;
-         renderCategories([]);
-     } finally {
+        if (loadMenuItems._unsubscribe) loadMenuItems._unsubscribe();
+        loadMenuItems._unsubscribe = window.db.collection('menuItems').onSnapshot(
+            liveSnap => {
+                applyMenuItemsUpdate(parseMenuItemsFromSnapshot(liveSnap));
+            },
+            err => {
+                console.warn('[realtime] error:', err.message);
+                if (isOffline) {
+                    loadFromCache();
+                }
+            }
+        );
+    } catch (error) {
+        console.error('Error loading menu:', error);
+        if (isOffline || error.message.includes('network')) {
+            loadFromCache();
+        } else if (!hadCache) {
+            container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>${strings.errorLoadingMenu}</p><p style="font-size:0.8rem;margin-top:8px">${error.message}</p></div>`;
+            renderCategories([], { forceRebuild: true, autoSelect: false });
+        }
+    } finally {
         loadMenuItems._inProgress = false;
+    }
+}
+
+function loadFromCache() {
+    var strings = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
+    var container = document.getElementById('menuGrid');
+    if (!container) return;
+
+    var cached = localStorage.getItem('cachedMenuItems');
+    if (cached) {
+        try {
+            var items = JSON.parse(cached);
+            cachedMenuItems = items;
+            _lastMenuItemsSignature = menuItemsSignature(items);
+            console.log('Loaded from cache:', items.length);
+            renderCategories(items, { autoSelect: true, forceRebuild: true });
+            _menuUiReady = true;
+            if (items.length === 0) {
+                container.innerHTML = '';
+            }
+        } catch (e) {
+            console.error('Error parsing cache:', e);
+            container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>${strings.errorLoadingMenu}</p>`;
+        }
+    } else {
+        container.innerHTML = '';
     }
 }
 
@@ -439,35 +824,111 @@ window.addEventListener('unload', function () {
     if (loadMenuItems._unsubscribe) loadMenuItems._unsubscribe();
 });
 
-function renderCategories(items) {
+function isEmenuPage() {
+    return document.body.classList.contains('emenu-layout');
+}
+
+function allCategoryIconSvg() {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
+        '<path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4l1.4-1.4M17 7l1.4-1.4"/>' +
+        '<circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/>' +
+        '</svg>';
+}
+
+function buildAllCategoryButton(label) {
+    return '<button class="category-btn category-btn-all" data-category="' + ALL_CATEGORY_ID + '">' +
+        '<span class="cat-all-mark" aria-hidden="true">' + allCategoryIconSvg() + '</span>' +
+        '<span class="cat-label">' + label + '</span></button>';
+}
+
+function filterItemsByCategory(items, category) {
+    if (category === ALL_CATEGORY_ID) return items;
+    var cachedCats = localStorage.getItem('cachedCategories');
+    if (cachedCats) {
+        try {
+            var categories = JSON.parse(cachedCats);
+            if (categories.some(function (c) { return c.id === category; })) {
+                return items.filter(function (i) { return i.category === category; });
+            }
+        } catch (e) {}
+    }
+    return items.filter(function (i) { return i.category === category; });
+}
+
+function renderCategories(items, options) {
+     options = options || {};
      const scroll = document.getElementById('categoryScroll');
      if (!scroll) return;
 
      const lang = localStorage.getItem('selectedLang') || 'ku';
      const strings = i18n[lang] || i18n.en;
+     const allBtn = isEmenuPage() ? buildAllCategoryButton(strings.allItems) : '';
 
-     const categoryOrder = ['Coffee', 'Tea', 'Cold Drinks', 'Dessert', 'Shisha', 'Special Drinks'];
-     const foundCategories = items.length > 0 ? new Set(items.map(i => i.category).filter(Boolean).filter(c => c !== 'Water')) : new Set(categoryOrder);
-     const ordered = categoryOrder.filter(c => foundCategories.has(c));
-     foundCategories.forEach(c => { if (!ordered.includes(c)) ordered.push(c); });
+     // Load categories from Firebase or cache
+     const cachedCats = localStorage.getItem('cachedCategories');
+     let categories = [];
+     if (cachedCats) {
+         try {
+             categories = JSON.parse(cachedCats);
+         } catch (e) {
+             console.error('Error parsing cached categories:', e);
+         }
+     }
 
-    const categoryIcons = {
-        'Coffee': '<img class="cat-icon" src="https://cdn-icons-png.flaticon.com/128/924/924514.png" alt="Coffee">',
-        'Tea': '<img class="cat-icon" src="https://cdn-icons-png.flaticon.com/128/1223/1223749.png" alt="Tea">',
-        'Cold Drinks': '<img class="cat-icon" src="https://cdn-icons-png.flaticon.com/128/1113/1113278.png" alt="Cold Drinks">',
-        'Dessert': '<img class="cat-icon" src="https://cdn-icons-png.flaticon.com/128/8346/8346809.png" alt="Dessert">',
-          'Shisha': '<img class="cat-icon" src="https://cdn-icons-png.flaticon.com/128/10170/10170651.png" alt="Shisha">',
-        'Special Drinks': '<img class="cat-icon" src="https://cdn-icons-png.flaticon.com/128/5473/5473500.png" alt="Special Drinks">',
-    };
+     const barSig = computeCategoryBarSig(categories, items, lang);
+     if (!options.forceRebuild && scroll.dataset.categorySig === barSig) {
+         if (options.autoSelect !== false) {
+             autoSelectCategoryAfterRender(options.forceFirst);
+         }
+         return;
+     }
+     scroll.dataset.categorySig = barSig;
 
-     let html = '';
-     ordered.forEach(cat => {
-         var key = cat.replace(/\s+/g, '');
-         key = key.charAt(0).toLowerCase() + key.slice(1);
-         var label = strings[key] || cat;
-         var icon = categoryIcons[cat] || '<svg class="cat-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/></svg>';
-         html += `<button class="category-btn" data-category="${cat}">${icon}<span class="cat-label">${label}</span></button>`;
-     });
+     // If no Firebase categories, use fallback
+     if (categories.length === 0) {
+         const categoryOrder = ['Coffee', 'Tea', 'Cold Drinks', 'Dessert', 'Shisha', 'Special Drinks'];
+         const foundCategories = items.length > 0 ? new Set(items.map(i => i.category).filter(Boolean).filter(c => c !== 'Water')) : new Set(categoryOrder);
+         const ordered = categoryOrder.filter(c => foundCategories.has(c));
+         foundCategories.forEach(c => { if (!ordered.includes(c)) ordered.push(c); });
+
+        const categoryIcons = {
+            'Coffee': '<img class="cat-icon" src="https://cdn-icons-png.flaticon.com/128/924/924514.png" alt="Coffee">',
+            'Tea': '<img class="cat-icon" src="https://cdn-icons-png.flaticon.com/128/1223/1223749.png" alt="Tea">',
+            'Cold Drinks': '<img class="cat-icon" src="https://cdn-icons-png.flaticon.com/128/1113/1113278.png" alt="Cold Drinks">',
+            'Dessert': '<img class="cat-icon" src="https://cdn-icons-png.flaticon.com/128/8346/8346809.png" alt="Dessert">',
+              'Shisha': '<img class="cat-icon" src="https://cdn-icons-png.flaticon.com/128/10170/10170651.png" alt="Shisha">',
+            'Special Drinks': '<img class="cat-icon" src="https://cdn-icons-png.flaticon.com/128/5473/5473500.png" alt="Special Drinks">',
+        };
+
+         let html = allBtn;
+         ordered.forEach(cat => {
+             var key = cat.replace(/\s+/g, '');
+             key = key.charAt(0).toLowerCase() + key.slice(1);
+             var label = strings[key] || cat;
+             var icon = categoryIcons[cat] || '<svg class="cat-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/></svg>';
+             html += `<button class="category-btn" data-category="${cat}">${icon}<span class="cat-label">${label}</span></button>`;
+         });
+
+         scroll.innerHTML = html;
+
+         scroll.querySelectorAll('.category-btn').forEach(btn => {
+             btn.addEventListener('click', () => {
+                 const cat = btn.getAttribute('data-category');
+                 switchCategory(cat);
+             });
+         });
+         if (options.autoSelect !== false) {
+             autoSelectCategoryAfterRender(options.forceFirst);
+         }
+         return;
+     }
+
+      let html = allBtn;
+      categories.forEach(cat => {
+          var name = cat.data['name_' + lang] || cat.data.name_en || strings.unnamed;
+          var icon = cat.data.image ? `<img class="cat-icon" src="${cat.data.image}" alt="${name}" onerror="this.onerror=null;this.src='https://cdn-icons-png.flaticon.com/128/924/924514.png'">` : '<svg class="cat-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/></svg>';
+          html += `<button class="category-btn" data-category="${cat.id}">${icon}<span class="cat-label">${name}</span></button>`;
+      });
 
      scroll.innerHTML = html;
 
@@ -477,11 +938,88 @@ function renderCategories(items) {
              switchCategory(cat);
          });
      });
+
+     if (options.autoSelect !== false) {
+         autoSelectCategoryAfterRender(options.forceFirst);
+     }
  }
 
-function switchCategory(category) {
+function autoSelectCategoryAfterRender(forceFirst) {
+    var scroll = document.getElementById('categoryScroll');
+    if (!scroll) return;
+    var target = _activeCategory;
+    if (forceFirst || !target) {
+        if (isEmenuPage()) {
+            target = ALL_CATEGORY_ID;
+        } else {
+            var firstBtn = scroll.querySelector('.category-btn');
+            target = firstBtn ? firstBtn.getAttribute('data-category') : null;
+        }
+    }
+    if (target) {
+        var exists = scroll.querySelector('.category-btn[data-category="' + target + '"]');
+        if (exists) {
+            switchCategory(target);
+        }
+    }
+}
+
+function clearCategorySelection() {
+    _activeCategory = null;
+    document.body.classList.remove('category-selected');
+    document.body.classList.remove('category-all-active');
+
+    var activeTitle = document.getElementById('activeCategoryTitle');
+    if (activeTitle) activeTitle.textContent = '';
+
+    document.querySelectorAll('.category-btn').forEach(function (btn) {
+        btn.classList.remove('active');
+    });
+
+    // Restore the background video to how it looked before any category was picked.
+    var bgVideo = document.querySelector('.bg-video');
+    if (bgVideo) {
+        bgVideo.style.visibility = '';
+        var playPromise = bgVideo.play();
+        if (playPromise && typeof playPromise.catch === 'function') {
+            playPromise.catch(function () {});
+        }
+    }
+
+    var grid = document.getElementById('menuGrid');
+    if (grid) {
+        grid.classList.add('category-switching');
+        setTimeout(function () {
+            grid.innerHTML = '';
+            grid.classList.remove('category-switching');
+        }, 150);
+    }
+
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function switchCategory(category, options) {
+    options = options || {};
+    if (_activeCategory === category) {
+        if (options.silent) {
+            renderMenuItems(filterItemsByCategory(cachedMenuItems, category));
+            renderMenuCardsWithFeatures();
+            return;
+        }
+        if (!document.body.classList.contains('emenu-layout')) {
+            clearCategorySelection();
+        }
+        return;
+    }
+
     _activeCategory = category;
     document.body.classList.add('category-selected');
+    document.body.classList.toggle('category-all-active', category === ALL_CATEGORY_ID);
+
+    var activeTitle = document.getElementById('activeCategoryTitle');
+    if (activeTitle) {
+        activeTitle.textContent = getCategoryDisplayName(category);
+    }
 
     document.querySelectorAll('.category-btn').forEach(btn => {
         btn.classList.toggle('active', btn.getAttribute('data-category') === category);
@@ -490,11 +1028,16 @@ function switchCategory(category) {
     const grid = document.getElementById('menuGrid');
     if (!grid) return;
 
+    if (options.silent) {
+        renderMenuItems(filterItemsByCategory(cachedMenuItems, category));
+        renderMenuCardsWithFeatures();
+        return;
+    }
+
     grid.classList.add('category-switching');
 
     setTimeout(() => {
-        const items = cachedMenuItems.filter(i => i.category === category);
-        renderMenuItems(items);
+        renderMenuItems(filterItemsByCategory(cachedMenuItems, category));
         renderMenuCardsWithFeatures();
         grid.classList.remove('category-switching');
     }, 200);
@@ -528,16 +1071,58 @@ function renderMenuItems(items) {
         const fallbackImage = 'data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%27400%27 height=%27300%27%3E%3Crect fill=%231a1a1a width=%27400%27 height=%27300%27/%3E%3Ctext x=%2750%25%27 y=%2750%25%27 font-size=%2740%27 text-anchor=%27middle%27 dy=%27.3em%27 fill=%23D4AF37%27%3E%E2%98%95%3C/text%3E%3C/svg%3E';
         const imageUrl = normalizeImageUrl(item.image) || fallbackImage;
 
+        // Get category name for badge
+        let categoryName = '';
+        const cachedCats = localStorage.getItem('cachedCategories');
+        if (cachedCats && item.category) {
+            try {
+                const categories = JSON.parse(cachedCats);
+                const cat = categories.find(c => c.id === item.category);
+                if (cat) {
+                    categoryName = cat.data['name_' + lang] || cat.data.name_en || '';
+                }
+            } catch (e) {}
+        }
+        // Fallback to old category name
+        if (!categoryName && item.category) {
+            const key = item.category.replace(/\s+/g, '');
+            const lookupKey = key.charAt(0).toLowerCase() + key.slice(1);
+            categoryName = strings[lookupKey] || item.category;
+        }
+
         const card = document.createElement('div');
         card.className = 'menu-card';
         card.setAttribute('role', 'button');
         card.setAttribute('tabindex', '0');
         card.setAttribute('data-item-id', item.id);
-        card.innerHTML = `
+
+        const isEmenu = document.body.classList.contains('emenu-layout');
+        const priceText = isEmenu
+            ? (item.price ? item.price.toLocaleString() : '0') + ' د.ع'
+            : (item.price ? item.price.toLocaleString() : '0') + ' IQD';
+
+        if (isEmenu) {
+            card.innerHTML = `
+                <div class="menu-card-img-wrapper">
+                    <img src="${imageUrl}" alt="${name}" class="menu-card-img" loading="lazy"
+                         onerror="this.onerror=null;this.src='${fallbackImage}';">
+                    <span class="menu-card-price-badge">${priceText}</span>
+                </div>
+                <div class="menu-card-foot">
+                    <span class="menu-card-foot-title">${name}</span>
+                    <button class="menu-card-fav" data-item-id="${item.id}" aria-label="Add to Cart">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                            <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+                        </svg>
+                    </button>
+                </div>
+            `;
+        } else {
+            card.innerHTML = `
             <div class="menu-card-img-wrapper">
                 <img src="${imageUrl}" alt="${name}" class="menu-card-img" loading="lazy"
                      onerror="this.onerror=null;this.src='${fallbackImage}';">
-                <div class="menu-card-badge">${strings[item.category.replace(/\s+/g, '').charAt(0).toLowerCase() + item.category.replace(/\s+/g, '').slice(1)] || item.category || ''}</div>
+                <div class="menu-card-badge">${categoryName}</div>
             </div>
             <div class="menu-card-body">
                 <h2 class="menu-card-title">${name}</h2>
@@ -547,15 +1132,33 @@ function renderMenuItems(items) {
                         ${item.price ? item.price.toLocaleString() : '0'}
                         <span class="price-currency">IQD</span>
                     </div>
-                    <span class="card-view-hint">→ ${strings.viewDetails}</span>
+                    <button class="menu-card-cart" data-item-id="${item.id}" aria-label="Add to Cart">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="9" cy="21" r="1"></circle>
+                            <circle cx="20" cy="21" r="1"></circle>
+                            <path d="M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6"></path>
+                        </svg>
+                    </button>
                 </div>
             </div>
         `;
+        }
 
         // Open detail on click
         const openDetail = () => openProductDetail(item);
         card.addEventListener('click', openDetail);
         card.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openDetail(); } });
+
+        // Cart / fav button
+        const cartBtn = card.querySelector('.menu-card-cart, .menu-card-fav');
+        if (cartBtn) {
+            cartBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                addToCart(item);
+                cartBtn.classList.add('added');
+                setTimeout(() => cartBtn.classList.remove('added'), 600);
+            });
+        }
 
         container.appendChild(card);
     });
@@ -564,6 +1167,44 @@ function renderMenuItems(items) {
 /* ========================================
    Product Detail Modal
    ======================================== */
+
+var _detailScrollY = 0;
+
+function lockPageScroll() {
+    _detailScrollY = window.scrollY || window.pageYOffset || 0;
+    document.body.style.position = 'fixed';
+    document.body.style.top = '-' + _detailScrollY + 'px';
+    document.body.style.left = '0';
+    document.body.style.right = '0';
+    document.body.style.width = '100%';
+}
+
+function unlockPageScroll() {
+    document.body.style.position = '';
+    document.body.style.top = '';
+    document.body.style.left = '';
+    document.body.style.right = '';
+    document.body.style.width = '';
+    window.scrollTo(0, _detailScrollY);
+}
+
+function getCategoryDisplayName(categoryId, lang) {
+    if (!categoryId) return '';
+    lang = lang || localStorage.getItem('selectedLang') || 'ku';
+    var strings = i18n[lang] || i18n.en;
+    if (categoryId === ALL_CATEGORY_ID) return strings.allItems;
+    var cachedCats = localStorage.getItem('cachedCategories');
+    if (cachedCats) {
+        try {
+            var categories = JSON.parse(cachedCats);
+            var cat = categories.find(function (c) { return c.id === categoryId; });
+            if (cat) return cat.data['name_' + lang] || cat.data.name_en || categoryId;
+        } catch (e) {}
+    }
+    var key = categoryId.replace(/\s+/g, '');
+    key = key.charAt(0).toLowerCase() + key.slice(1);
+    return strings[key] || categoryId;
+}
 
 function openProductDetail(item) {
     _currentDetailItem = item;
@@ -578,7 +1219,7 @@ function openProductDetail(item) {
     if (imgEl) imgEl.src = imageUrl;
 
     const catEl = document.getElementById('detailCategory');
-    if (catEl) catEl.textContent = item.category || '';
+    if (catEl) catEl.textContent = getCategoryDisplayName(item.category, lang);
 
     const titleEl = document.getElementById('detailTitle');
     if (titleEl) titleEl.textContent = name;
@@ -603,8 +1244,13 @@ function openProductDetail(item) {
     // Show overlay
     const overlay = document.getElementById('detailOverlay');
     if (overlay) {
+        if (overlay.parentElement !== document.body) {
+            document.body.appendChild(overlay);
+        }
         overlay.classList.add('open');
         document.body.classList.add('detail-open');
+        lockPageScroll();
+        overlay.scrollTop = 0;
     }
 }
 
@@ -613,6 +1259,7 @@ function closeProductDetail() {
     if (overlay) {
         overlay.classList.remove('open');
         document.body.classList.remove('detail-open');
+        unlockPageScroll();
     }
     _currentDetailItem = null;
 }
@@ -646,26 +1293,78 @@ function closeVideoModal() {
    ======================================== */
 
 document.addEventListener('DOMContentLoaded', function () {
+    // Initialize cart
+    loadCart();
+    updateCartBadge();
+
+    // Initialize language dropdown
+    var currentLang = localStorage.getItem('selectedLang') || 'ku';
+    var currentLangLabel = document.getElementById('currentLangLabel');
+    if (currentLangLabel) {
+        currentLangLabel.textContent = currentLang.toUpperCase();
+    }
+    document.querySelectorAll('.lang-option').forEach(function(option) {
+        option.classList.toggle('active', option.getAttribute('data-lang') === currentLang);
+    });
+
+    // Cart button
+    var cartBtn = document.getElementById('cartBtn');
+    if (cartBtn) {
+        cartBtn.addEventListener('click', openCartPanel);
+    }
+
+    var cartClose = document.getElementById('cartClose');
+    if (cartClose) {
+        cartClose.addEventListener('click', closeCartPanel);
+    }
+
+    var cartOverlay = document.getElementById('cartOverlay');
+    if (cartOverlay) {
+        cartOverlay.addEventListener('click', function(e) {
+            if (e.target === cartOverlay) closeCartPanel();
+        });
+    }
+
+    var cartClear = document.getElementById('cartClear');
+    if (cartClear) {
+        cartClear.addEventListener('click', function() {
+            clearCart();
+            renderCartItems();
+        });
+    }
+
+    var cartWhatsapp = document.getElementById('cartWhatsapp');
+    if (cartWhatsapp) {
+        cartWhatsapp.addEventListener('click', function() {
+            sendWhatsAppOrder();
+        });
+    }
+
+    setupCafeInfoPanel();
+
     // Detail close
-    const detailBackdrop = document.getElementById('detailBackdrop');
-    const detailClose = document.getElementById('detailClose');
+    var detailBackdrop = document.getElementById('detailBackdrop');
+    var detailClose = document.getElementById('detailClose');
     if (detailBackdrop) detailBackdrop.addEventListener('click', closeProductDetail);
     if (detailClose) detailClose.addEventListener('click', closeProductDetail);
 
     // Video close
-    const videoOverlay = document.getElementById('videoOverlay');
-    const videoClose = document.getElementById('videoClose');
+    var videoOverlay = document.getElementById('videoOverlay');
+    var videoClose = document.getElementById('videoClose');
     if (videoOverlay) videoOverlay.addEventListener('click', function (e) { if (e.target === this) closeVideoModal(); });
     if (videoClose) videoClose.addEventListener('click', closeVideoModal);
 
     // Escape key
     document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') {
-            const videoOverlay = document.getElementById('videoOverlay');
+            var videoOverlay = document.getElementById('videoOverlay');
             if (videoOverlay && videoOverlay.classList.contains('open')) {
                 closeVideoModal();
             } else {
+                closeInstallTutorial();
+                closeCafeInfoPanel();
                 closeProductDetail();
+                closeCartPanel();
             }
         }
     });
@@ -686,8 +1385,19 @@ function setActiveLanguage(lang) {
         window.history.pushState({ path: url.href }, '', url.href);
     }
 
+    // Update old buttons
     document.querySelectorAll('.lang-btn').forEach(btn => {
         btn.classList.toggle('active', btn.getAttribute('data-lang') === lang);
+    });
+
+    // Update new dropdown
+    var currentLangLabel = document.getElementById('currentLangLabel');
+    if (currentLangLabel) {
+        currentLangLabel.textContent = lang.toUpperCase();
+    }
+
+    document.querySelectorAll('.lang-option').forEach(function(option) {
+        option.classList.toggle('active', option.getAttribute('data-lang') === lang);
     });
 
     document.documentElement.dir = (lang === 'ar' || lang === 'ku') ? 'rtl' : 'ltr';
@@ -698,6 +1408,7 @@ function applyLanguageUI(lang) {
     document.title = strings.pageTitle;
 
     document.querySelectorAll('[data-i18n]').forEach(function (element) {
+        if (element.closest('#menuHeroBrand')) return;
         var key = element.getAttribute('data-i18n');
         if (strings[key]) element.textContent = strings[key];
     });
@@ -712,15 +1423,20 @@ function applyLanguageUI(lang) {
     }
 
     if (cachedMenuItems.length > 0) {
-        renderCategories(cachedMenuItems);
-        if (_activeCategory && _activeCategory !== null) {
-            renderMenuItems(cachedMenuItems.filter(function (i) { return i.category === _activeCategory; }));
+        renderCategories(cachedMenuItems, { forceRebuild: true, autoSelect: false });
+        if (_activeCategory) {
+            switchCategory(_activeCategory, { silent: true });
+        } else {
+            autoSelectCategoryAfterRender();
         }
     }
 
     if (_currentDetailItem) {
         openProductDetail(_currentDetailItem);
     }
+
+    updateCafeInfoPanel();
+    updateInstallTutorialUI();
 }
 
 function updateAdminPanelText(strings) {
@@ -730,6 +1446,7 @@ function updateAdminPanelText(strings) {
         categories: strings.manageCategories,
         reports: strings.reports,
         cashier: strings.cashier,
+        expenses: strings.expenses,
         settings: strings.settings,
         logout: strings.logout
     };
@@ -749,6 +1466,41 @@ function updateAdminPanelText(strings) {
 }
 
 function setupLanguageButtons() {
+    // New language dropdown
+    var langDropdownBtn = document.getElementById('langDropdownBtn');
+    var langDropdownMenu = document.getElementById('langDropdownMenu');
+    var langDropdown = document.getElementById('langDropdown');
+    var currentLangLabel = document.getElementById('currentLangLabel');
+
+    if (langDropdownBtn && langDropdownMenu) {
+        langDropdownBtn.addEventListener('click', function(e) {
+            e.stopPropagation();
+            var themeDropdown = document.getElementById('themeDropdown');
+            if (themeDropdown) themeDropdown.classList.remove('open');
+            langDropdown.classList.toggle('open');
+        });
+
+        langDropdownMenu.querySelectorAll('.lang-option').forEach(function(option) {
+            option.addEventListener('click', function() {
+                var lang = this.getAttribute('data-lang');
+                setActiveLanguage(lang);
+                applyLanguageUI(lang);
+                langDropdown.classList.remove('open');
+                if (currentLangLabel) {
+                    currentLangLabel.textContent = lang.toUpperCase();
+                }
+            });
+        });
+
+        // Close when clicking outside
+        document.addEventListener('click', function() {
+            if (langDropdown) {
+                langDropdown.classList.remove('open');
+            }
+        });
+    }
+
+    // Keep old buttons working for backward compatibility
     document.querySelectorAll('.lang-btn').forEach(button => {
         button.addEventListener('click', () => {
             const lang = button.getAttribute('data-lang');
@@ -762,9 +1514,47 @@ function setupLanguageButtons() {
    Theme
    ======================================== */
 
+function setupOfflineDetection() {
+    window.addEventListener('online', function () {
+        isOffline = false;
+        updateOfflineIndicator();
+        console.log('Back online');
+    });
+
+    window.addEventListener('offline', function () {
+        isOffline = true;
+        updateOfflineIndicator();
+        console.log('Gone offline');
+    });
+
+    // Check initial status
+    isOffline = !navigator.onLine;
+    updateOfflineIndicator();
+}
+
+function updateOfflineIndicator() {
+    var existing = document.getElementById('offlineIndicator');
+    if (existing) existing.remove();
+
+    if (isOffline) {
+        var indicator = document.createElement('div');
+        indicator.id = 'offlineIndicator';
+        indicator.style.cssText = 'position:fixed;top:60px;left:50%;transform:translateX(-50%);background:#C62828;color:white;padding:8px 16px;border-radius:20px;font-size:12px;font-weight:600;z-index:9999;box-shadow:0 4px12px rgba(0,0,0,0.3);';
+        var lang = localStorage.getItem('selectedLang') || 'ku';
+        var S = i18n[lang] || i18n.en;
+        indicator.textContent = S.offlineMode;
+        document.body.appendChild(indicator);
+    }
+}
+
 function setupThemeToggle() {
     const themeToggle = document.getElementById('themeToggle');
     const adminThemeToggle = document.getElementById('adminThemeToggle');
+
+    if (document.body.classList.contains('emenu-layout')) {
+        setupMenuThemePicker();
+        return;
+    }
 
     const savedTheme = localStorage.getItem('theme') || 'dark';
 
@@ -784,15 +1574,627 @@ function setupThemeToggle() {
     if (adminThemeToggle) adminThemeToggle.addEventListener('click', handleToggle);
 }
 
+var MENU_THEMES = window.MENU_THEMES || {
+    light:  { id: 'light',  light: true,  meta: '#9B6135', brown: '#9B6135', bg: '#FFFFFF', cat: '#F8F8F8', card: '#FFFFFF', surface: '#FFFFFF', pill: '#FFFFFF', fab: '#FFFFFF', text: '#1A1A1A', border: '#E8E8E8', fabText: '#5F6368' },
+    cream:  { id: 'cream',  light: true,  meta: '#8B6914', brown: '#8B6914', bg: '#FAF7F2', cat: '#F0E9DF', card: '#FFFFFF', surface: '#FFFFFF', pill: '#FFFFFF', fab: '#FFFFFF', text: '#2C2416', border: '#E8DFD2', fabText: '#6B5E54' },
+    coffee: { id: 'coffee', light: true,  meta: '#6F4E37', brown: '#6F4E37', bg: '#F5EDE3', cat: '#EBE0D4', card: '#FFFCF8', surface: '#FFFCF8', pill: '#FFFCF8', fab: '#FFFFFF', text: '#2A2018', border: '#DDD0C4', fabText: '#6B5344' },
+    gold:   { id: 'gold',   light: true,  meta: '#B8910C', brown: '#B8910C', bg: '#FFFDF5', cat: '#FBF5E6', card: '#FFFFFF', surface: '#FFFFFF', pill: '#FFFFFF', fab: '#FFFFFF', text: '#1A1608', border: '#EDE4CC', fabText: '#6B6248' },
+    mocha:  { id: 'mocha',  light: true,  meta: '#5C4033', brown: '#5C4033', bg: '#F3EBE4', cat: '#E8DDD4', card: '#FAF6F2', surface: '#FAF6F2', pill: '#FAF6F2', fab: '#FFFFFF', text: '#261A14', border: '#D9CEC4', fabText: '#6B5A50' },
+    dark:   { id: 'dark',   light: false, meta: '#1A1A1A', brown: '#C4956A', bg: '#141414', cat: '#1E1E1E', card: '#2A2A2A', surface: '#2A2A2A', pill: '#2A2A2A', fab: '#333333', text: '#F0F0F0', border: '#444444', fabText: '#CFCFCF' }
+};
+
+function emenuBrownRing(hex, alpha) {
+    if (window.emenuBrownRing) return window.emenuBrownRing(hex, alpha);
+    alpha = alpha == null ? 0.22 : alpha;
+    if (!hex || hex.charAt(0) !== '#') return 'rgba(155,97,53,' + alpha + ')';
+    var h = hex.slice(1);
+    if (h.length === 3) h = h.split('').map(function (c) { return c + c; }).join('');
+    var r = parseInt(h.slice(0, 2), 16);
+    var g = parseInt(h.slice(2, 4), 16);
+    var b = parseInt(h.slice(4, 6), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + alpha + ')';
+}
+
+function applyMenuTheme(themeId) {
+    if (!MENU_THEMES[themeId]) themeId = 'light';
+    var theme = MENU_THEMES[themeId];
+    theme.id = themeId;
+    var body = document.body;
+
+    if (window.applyEmenuThemeCssVars) {
+        window.applyEmenuThemeCssVars(body, theme);
+    } else {
+        body.setAttribute('data-menu-theme', themeId);
+        body.classList.toggle('light-mode', theme.light);
+        body.style.setProperty('--emenu-brown', theme.brown);
+        body.style.setProperty('--emenu-bg', theme.bg);
+        body.style.setProperty('--emenu-cat-bg', theme.cat);
+        body.style.setProperty('--emenu-card-bg', theme.card);
+        body.style.setProperty('--emenu-surface', theme.surface);
+        body.style.setProperty('--emenu-pill-bg', theme.pill);
+        body.style.setProperty('--emenu-fab-bg', theme.fab);
+        body.style.setProperty('--emenu-text', theme.text);
+        body.style.setProperty('--emenu-border', theme.border);
+        body.style.setProperty('--emenu-fab-text', theme.fabText);
+        body.style.setProperty('--emenu-curve', theme.bg);
+        body.style.setProperty('--emenu-hero-accent', theme.brown);
+        body.style.setProperty('--emenu-fab-accent', theme.brown);
+        body.style.setProperty('--emenu-fab-border', theme.border);
+        body.style.setProperty('--emenu-fab-accent-ring', emenuBrownRing(theme.brown, 0.22));
+        body.style.setProperty('--emenu-fab-accent-ring-strong', emenuBrownRing(theme.brown, 0.38));
+    }
+
+    var heroBrand = document.getElementById('menuHeroBrand');
+    if (heroBrand) {
+        heroBrand.classList.remove('hero-theme-pulse');
+        void heroBrand.offsetWidth;
+        heroBrand.classList.add('hero-theme-pulse');
+        setTimeout(function () {
+            heroBrand.classList.remove('hero-theme-pulse');
+        }, 900);
+    }
+
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', theme.meta);
+
+    document.querySelectorAll('.theme-option').forEach(function (btn) {
+        btn.classList.toggle('active', btn.getAttribute('data-theme') === themeId);
+    });
+
+    localStorage.setItem('menuTheme', themeId);
+}
+
+function setupMenuThemePicker() {
+    var saved = localStorage.getItem('menuTheme');
+    if (!saved || !MENU_THEMES[saved]) saved = 'light';
+    applyMenuTheme(saved);
+
+    var themeDropdown = document.getElementById('themeDropdown');
+    var themeDropdownBtn = document.getElementById('themeDropdownBtn');
+    var themeDropdownMenu = document.getElementById('themeDropdownMenu');
+    var langDropdown = document.getElementById('langDropdown');
+
+    if (themeDropdownBtn && themeDropdownMenu && themeDropdown) {
+        themeDropdownBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (langDropdown) langDropdown.classList.remove('open');
+            themeDropdown.classList.toggle('open');
+        });
+
+        themeDropdownMenu.querySelectorAll('.theme-option').forEach(function (option) {
+            option.addEventListener('click', function (e) {
+                e.stopPropagation();
+                applyMenuTheme(this.getAttribute('data-theme'));
+                themeDropdown.classList.remove('open');
+            });
+        });
+    }
+
+    document.addEventListener('click', function (e) {
+        if (themeDropdown && !themeDropdown.contains(e.target)) {
+            themeDropdown.classList.remove('open');
+        }
+    });
+}
+
+var HERO_TYPE_PHRASES = [
+    { text: 'Ali Coffee', dir: 'ltr' },
+    { text: 'عەلی کافێ', dir: 'rtl' }
+];
+
+function heroTypeChars(str) {
+    return Array.from(str);
+}
+
+function initHeroTitleSequence() {
+    var typewriter = document.getElementById('heroTypewriter');
+    var typedEl = document.getElementById('heroTitleTyped');
+    if (!typewriter || !typedEl) return;
+
+    stopHeroTitleLoop();
+
+    var phraseIndex = 0;
+    var charIndex = 0;
+    var isDeleting = false;
+    var chars = heroTypeChars(HERO_TYPE_PHRASES[0].text);
+
+    function typeDelay() {
+        if (isDeleting) return 38 + Math.random() * 28;
+        return 68 + Math.random() * 45;
+    }
+
+    function pauseDelay() {
+        return isDeleting ? 320 : 2000;
+    }
+
+    function applyPhraseMeta() {
+        var phrase = HERO_TYPE_PHRASES[phraseIndex];
+        typewriter.setAttribute('dir', phrase.dir);
+        typedEl.setAttribute('dir', phrase.dir);
+    }
+
+    function tick() {
+        var phrase = HERO_TYPE_PHRASES[phraseIndex];
+        chars = heroTypeChars(phrase.text);
+        applyPhraseMeta();
+
+        if (!isDeleting) {
+            charIndex += 1;
+            typedEl.textContent = chars.slice(0, charIndex).join('');
+
+            if (charIndex >= chars.length) {
+                initHeroTitleSequence._timeout = setTimeout(function () {
+                    isDeleting = true;
+                    tick();
+                }, pauseDelay());
+                return;
+            }
+        } else {
+            charIndex -= 1;
+            typedEl.textContent = chars.slice(0, charIndex).join('');
+
+            if (charIndex <= 0) {
+                isDeleting = false;
+                phraseIndex = (phraseIndex + 1) % HERO_TYPE_PHRASES.length;
+                initHeroTitleSequence._timeout = setTimeout(tick, pauseDelay());
+                return;
+            }
+        }
+
+        initHeroTitleSequence._timeout = setTimeout(tick, typeDelay());
+    }
+
+    typedEl.textContent = '';
+    applyPhraseMeta();
+    initHeroTitleSequence._timeout = setTimeout(tick, 500);
+}
+
+function stopHeroTitleLoop() {
+    if (initHeroTitleSequence._timeout) {
+        clearTimeout(initHeroTitleSequence._timeout);
+        initHeroTitleSequence._timeout = null;
+    }
+}
+
 /* ========================================
-    Menu Features: Favorites & Ratings
+    Cart Functions
+    ======================================== */
+
+function loadCart() {
+    try {
+        cartItems = JSON.parse(localStorage.getItem('cart_items') || '[]');
+    } catch(e) {
+        cartItems = [];
+    }
+}
+
+function saveCart() {
+    localStorage.setItem('cart_items', JSON.stringify(cartItems));
+}
+
+function addToCart(item) {
+    var lang = localStorage.getItem('selectedLang') || 'ku';
+    var name = item['name_' + lang] || item.name_en || item.name;
+    var existing = cartItems.find(function(i) { return i.id === item.id; });
+    
+    if (existing) {
+        existing.quantity += 1;
+    } else {
+        cartItems.push({
+            id: item.id,
+            name: name,
+            price: item.price || 0,
+            image: item.image || '',
+            quantity: 1
+        });
+    }
+    saveCart();
+    updateCartBadge();
+}
+
+function removeFromCart(itemId) {
+    cartItems = cartItems.filter(function(i) { return i.id !== itemId; });
+    saveCart();
+    updateCartBadge();
+}
+
+function updateCartQuantity(itemId, delta) {
+    var item = cartItems.find(function(i) { return i.id === itemId; });
+    if (item) {
+        item.quantity += delta;
+        if (item.quantity <= 0) {
+            removeFromCart(itemId);
+        } else {
+            saveCart();
+        }
+    }
+    updateCartBadge();
+}
+
+function getCartTotal() {
+    return cartItems.reduce(function(sum, i) { return sum + (i.price * i.quantity); }, 0);
+}
+
+function updateCartBadge() {
+    var badge = document.getElementById('cartBadge');
+    var count = cartItems.reduce(function(sum, i) { return sum + i.quantity; }, 0);
+    if (badge) {
+        badge.textContent = count;
+        badge.style.display = count > 0 ? 'flex' : 'none';
+    }
+}
+
+function clearCart() {
+    cartItems = [];
+    saveCart();
+    updateCartBadge();
+}
+
+function sendWhatsAppOrder() {
+    if (cartItems.length === 0) return;
+    
+    var lang = localStorage.getItem('selectedLang') || 'ku';
+    var cafeName = localStorage.getItem('cafeName') || 'Ali Coffee';
+    var phone = localStorage.getItem('whatsappPhone') || '9647506454656';
+    
+    var nameEl = document.getElementById('customerName');
+    var placeEl = document.getElementById('customerPlace');
+    var customerName = nameEl ? nameEl.value.trim() : '';
+    var customerPlace = placeEl ? placeEl.value.trim() : '';
+
+    var labels = {
+        ku: { order: 'داواکاری نوێ', name: 'ناو', place: 'شوێن', total: 'کۆی گشتی', time: 'کات', needName: 'تکایە ناوت بنووسە' },
+        ar: { order: 'طلب جديد', name: 'الاسم', place: 'الموقع', total: 'الإجمالي', time: 'الوقت', needName: 'الرجاء إدخال اسمك' },
+        en: { order: 'New Order', name: 'Name', place: 'Location', total: 'Total', time: 'Time', needName: 'Please enter your name' }
+    };
+    var T = labels[lang] || labels.en;
+
+    if (!customerName) {
+        alert(T.needName);
+        if (nameEl) nameEl.focus();
+        return;
+    }
+
+    var divider = '------------------------';
+    var LRM_TIME = '\u200E';
+    var lines = [];
+    lines.push(T.time + ': ' + LRM_TIME + new Date().toLocaleString());
+    lines.push(cafeName + ' - ' + T.order);
+    lines.push(T.name + ': ' + customerName);
+    if (customerPlace) lines.push(T.place + ': ' + customerPlace);
+    lines.push(divider);
+
+    // \u200E = Left-to-Right Mark. It keeps the numeric "qty x price = total"
+    // expression in correct left-to-right order even inside an RTL (Kurdish/
+    // Arabic) message, otherwise WhatsApp reorders the x/=/numbers.
+    var LRM = '\u200E';
+    cartItems.forEach(function (item) {
+        lines.push(item.name);
+        var lineTotal = (item.price * item.quantity).toLocaleString();
+        if (item.quantity > 1) {
+            lines.push(LRM + item.quantity + ' x ' + item.price.toLocaleString() + ' = ' + lineTotal + ' IQD');
+        } else {
+            lines.push(LRM + lineTotal + ' IQD');
+        }
+    });
+
+    lines.push(divider);
+    lines.push(T.total + ': ' + LRM + getCartTotal().toLocaleString() + ' IQD');
+
+    var message = lines.join('\n');
+
+    var cleanPhone = phone.replace(/\D/g, '');
+    var encoded = encodeURIComponent(message);
+    var url = 'https://wa.me/' + cleanPhone + '?text=' + encoded;
+
+    window.open(url, '_blank');
+}
+
+/* ========================================
+   Cafe Info Panel
+   ======================================== */
+
+function getCafeInfo() {
+    var defaultUrl = 'https://maps.app.goo.gl/mmi5iv7mnGKxKZoq9?g_st=ic';
+    var defaultLabel = 'بەحرکە-مجەمع';
+    var storedUrl = localStorage.getItem('cafeLocationUrl');
+    var storedLabel = localStorage.getItem('cafeLocationLabel');
+
+    if (storedUrl === 'https://maps.google.com/?q=Baharka+Erbil') {
+        localStorage.setItem('cafeLocationUrl', defaultUrl);
+        storedUrl = defaultUrl;
+    }
+    if (storedLabel === 'baharka-erbil | شارع 150') {
+        localStorage.setItem('cafeLocationLabel', defaultLabel);
+        storedLabel = defaultLabel;
+    }
+
+    return {
+        name: localStorage.getItem('cafeName') || 'Ali Coffee',
+        phone: localStorage.getItem('whatsappPhone') || '9647506454656',
+        locationUrl: storedUrl || defaultUrl,
+        locationLabel: storedLabel || defaultLabel,
+        instagram: localStorage.getItem('cafeInstagram') || '',
+        openHour: 14,
+        closeHour: 2
+    };
+}
+
+function isCafeOpen(info) {
+    info = info || getCafeInfo();
+    var now = new Date();
+    var mins = now.getHours() * 60 + now.getMinutes();
+    var start = info.openHour * 60;
+    var end = info.closeHour * 60;
+    return mins >= start || mins < end;
+}
+
+function formatCafePhone(phone) {
+    var digits = (phone || '').replace(/\D/g, '');
+    if (!digits) return '';
+
+    if (digits.indexOf('964') === 0 && digits.length >= 12) {
+        var local = digits.slice(3);
+        if (local.length === 10) {
+            return '+964 ' + local.slice(0, 3) + ' ' + local.slice(3, 6) + ' ' + local.slice(6);
+        }
+        return '+964 ' + local.slice(0, 3) + ' ' + local.slice(3);
+    }
+
+    if (digits.length >= 10) {
+        return '+' + digits;
+    }
+
+    return '+' + digits;
+}
+
+function updateCafeInfoPanel() {
+    var overlay = document.getElementById('cafeInfoOverlay');
+    if (!overlay) return;
+
+    var lang = localStorage.getItem('selectedLang') || 'ku';
+    var strings = i18n[lang] || i18n.en;
+    var info = getCafeInfo();
+    var open = isCafeOpen(info);
+
+    var statusEl = document.getElementById('cafeStatusBadge');
+    if (statusEl) {
+        statusEl.classList.toggle('is-open', open);
+        statusEl.classList.toggle('is-closed', !open);
+        var statusText = statusEl.querySelector('[data-cafe-status-text]');
+        if (statusText) statusText.textContent = open ? strings.cafeOpen : strings.cafeClosed;
+    }
+
+    var titleEl = document.getElementById('cafeInfoTitle');
+    if (titleEl) titleEl.textContent = strings.cafeInfoTitle;
+
+    var hoursEl = document.getElementById('cafeHoursText');
+    if (hoursEl) hoursEl.textContent = strings.cafeHoursValue;
+
+    var addressEl = document.getElementById('cafeAddressLink');
+    var addressText = document.getElementById('cafeAddressText');
+    if (addressEl) addressEl.href = info.locationUrl;
+    if (addressText) addressText.textContent = info.locationLabel;
+
+    var phoneEl = document.getElementById('cafePhoneDisplay');
+    if (phoneEl) {
+        phoneEl.textContent = formatCafePhone(info.phone);
+        phoneEl.setAttribute('dir', 'ltr');
+    }
+
+    var instaBtn = document.getElementById('cafeInstagramBtn');
+    if (instaBtn) {
+        instaBtn.href = info.instagram || '#';
+        instaBtn.style.display = info.instagram ? '' : 'none';
+    }
+
+    var waBtn = document.getElementById('cafeWhatsappBtn');
+    if (waBtn) {
+        var clean = info.phone.replace(/\D/g, '');
+        waBtn.href = 'https://wa.me/' + clean;
+    }
+}
+
+function openCafeInfoPanel() {
+    updateCafeInfoPanel();
+    var overlay = document.getElementById('cafeInfoOverlay');
+    if (overlay) {
+        overlay.classList.add('open');
+        overlay.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('cafe-info-open');
+    }
+}
+
+function closeCafeInfoPanel() {
+    var overlay = document.getElementById('cafeInfoOverlay');
+    if (overlay) {
+        overlay.classList.remove('open');
+        overlay.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('cafe-info-open');
+    }
+}
+
+function shareCafeMenu() {
+    var lang = localStorage.getItem('selectedLang') || 'ku';
+    var strings = i18n[lang] || i18n.en;
+    var info = getCafeInfo();
+    var url = window.location.href.split('#')[0];
+    var payload = {
+        title: info.name,
+        text: info.name + ' — Menu',
+        url: url
+    };
+
+    if (navigator.share) {
+        navigator.share(payload).catch(function () {});
+        return;
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(url).then(function () {
+            alert(strings.linkCopied);
+        });
+        return;
+    }
+
+    prompt(strings.cafeShare, url);
+}
+
+function setupCafeInfoPanel() {
+    var btn = document.getElementById('cafeInfoBtn');
+    var overlay = document.getElementById('cafeInfoOverlay');
+    if (!btn || !overlay) return;
+
+    btn.addEventListener('click', openCafeInfoPanel);
+
+    var closeBtn = document.getElementById('cafeInfoClose');
+    if (closeBtn) closeBtn.addEventListener('click', closeCafeInfoPanel);
+
+    overlay.addEventListener('click', function (e) {
+        if (e.target === overlay || e.target.classList.contains('cafe-info-backdrop')) {
+            closeCafeInfoPanel();
+        }
+    });
+
+    var callBtn = document.getElementById('cafeCallBtn');
+    if (callBtn) {
+        callBtn.addEventListener('click', function () {
+            var phone = getCafeInfo().phone.replace(/\D/g, '');
+            window.location.href = 'tel:+' + phone;
+        });
+    }
+
+    var shareBtn = document.getElementById('cafeShareBtn');
+    if (shareBtn) shareBtn.addEventListener('click', shareCafeMenu);
+
+    var locationBtn = document.getElementById('cafeLocationBtn');
+    if (locationBtn) {
+        locationBtn.addEventListener('click', function () {
+            window.open(getCafeInfo().locationUrl, '_blank');
+        });
+    }
+
+    var installHelpBtn = document.getElementById('cafeInstallHelpBtn');
+    if (installHelpBtn) {
+        installHelpBtn.addEventListener('click', function () {
+            closeCafeInfoPanel();
+            openInstallTutorial();
+        });
+    }
+
+    updateCafeInfoPanel();
+}
+
+function openCartPanel() {
+    renderCartItems();
+    updateCustomerFieldPlaceholders();
+    var overlay = document.getElementById('cartOverlay');
+    if (overlay) {
+        overlay.classList.add('open');
+        document.body.classList.add('cart-open');
+    }
+}
+
+function updateCustomerFieldPlaceholders() {
+    var lang = localStorage.getItem('selectedLang') || 'ku';
+    var ph = {
+        ku: { name: 'ناوی بەڕێزتان؟', place: 'شوێنی بەڕێزتان؟' },
+        ar: { name: 'اسمك الكريم؟', place: 'موقعك؟' },
+        en: { name: 'Your name?', place: 'Your location?' }
+    };
+    var p = ph[lang] || ph.en;
+    var nameEl = document.getElementById('customerName');
+    var placeEl = document.getElementById('customerPlace');
+    if (nameEl) nameEl.placeholder = p.name;
+    if (placeEl) placeEl.placeholder = p.place;
+}
+
+function closeCartPanel() {
+    var overlay = document.getElementById('cartOverlay');
+    if (overlay) {
+        overlay.classList.remove('open');
+        document.body.classList.remove('cart-open');
+    }
+}
+
+function renderCartItems() {
+    var container = document.getElementById('cartItems');
+    var emptyEl = document.getElementById('cartEmpty');
+    var totalEl = document.getElementById('cartTotal');
+    var lang = localStorage.getItem('selectedLang') || 'ku';
+    var S = i18n[lang] || i18n.en;
+
+    if (!container) return;
+
+    if (cartItems.length === 0) {
+        container.innerHTML = '<div class="cart-empty">' +
+            '<div class="cart-empty-icon">🛒</div>' +
+            '<p>' + S.cartEmpty + '</p>' +
+        '</div>';
+        if (totalEl) totalEl.textContent = '0 IQD';
+        return;
+    }
+
+    var total = 0;
+    var html = '';
+    cartItems.forEach(function(item) {
+        var subtotal = item.price * item.quantity;
+        total += subtotal;
+        var fallbackImage = 'data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%27100%27 height=%27100%27%3E%3Crect fill=%231a1a1a width=%27100%27 height=%27100%27/%3E%3Ctext x=%2750%25%27 y=%2750%25%27 font-size=%2724%27 text-anchor=%27middle%27 dy=%27.3em%27 fill=%23D4AF37%27%3E%E2%98%95%3C/text%3E%3C/svg%3E';
+        var img = item.image || fallbackImage;
+
+        html += '<div class="cart-item">' +
+            '<div class="cart-item-img">' +
+                '<img src="' + img + '" alt="' + item.name + '" onerror="this.onerror=null;this.src=\'' + fallbackImage + '\'">' +
+            '</div>' +
+            '<div class="cart-item-info">' +
+                '<span class="cart-item-name">' + item.name + '</span>' +
+                '<span class="cart-item-price">' + item.price.toLocaleString() + ' IQD</span>' +
+            '</div>' +
+            '<div class="cart-item-qty">' +
+                '<button class="cart-qty-btn minus" data-id="' + item.id + '">−</button>' +
+                '<span class="cart-qty-val">' + item.quantity + '</span>' +
+                '<button class="cart-qty-btn plus" data-id="' + item.id + '">+</button>' +
+            '</div>' +
+            '<div class="cart-item-subtotal">' + subtotal.toLocaleString() + ' IQD</div>' +
+            '<button class="cart-item-remove" data-id="' + item.id + '">✕</button>' +
+        '</div>';
+    });
+
+    container.innerHTML = html;
+    if (totalEl) totalEl.textContent = total.toLocaleString() + ' IQD';
+
+    // Event listeners
+    container.querySelectorAll('.cart-qty-btn.minus').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            updateCartQuantity(this.getAttribute('data-id'), -1);
+            renderCartItems();
+        });
+    });
+
+    container.querySelectorAll('.cart-qty-btn.plus').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            updateCartQuantity(this.getAttribute('data-id'), 1);
+            renderCartItems();
+        });
+    });
+
+    container.querySelectorAll('.cart-item-remove').forEach(function(btn) {
+        btn.addEventListener('click', function() {
+            removeFromCart(this.getAttribute('data-id'));
+            renderCartItems();
+        });
+    });
+}
+
+/* ========================================
+    Menu Features: Favorites & Ratings (DISABLED)
     ======================================== */
 
 var MENU_FEATURES = {
     getFavorites() {
         try { return JSON.parse(localStorage.getItem('menu_favorites') || '[]'); } catch(e) { return []; }
     },
-
     toggleFav(id) {
         var favs = this.getFavorites();
         var idx = favs.indexOf(id);
@@ -800,88 +2202,269 @@ var MENU_FEATURES = {
         localStorage.setItem('menu_favorites', JSON.stringify(favs));
         return idx === -1;
     },
-
     isFav(id) { return this.getFavorites().indexOf(id) > -1; },
-
     getRating(itemId) {
         try { var r = JSON.parse(localStorage.getItem('menu_ratings') || '{}'); return r[itemId] || 0; } catch(e) { return 0; }
     },
-
     setRating(itemId, stars) {
         try { var r = JSON.parse(localStorage.getItem('menu_ratings') || '{}'); r[itemId] = stars; localStorage.setItem('menu_ratings', JSON.stringify(r)); } catch(e) {}
     }
 };
 
 function renderMenuCardsWithFeatures() {
-    var cards = document.querySelectorAll('.menu-card');
-    cards.forEach(function(card) {
-        var imgWrapper = card.querySelector('.menu-card-img-wrapper');
-        if (!imgWrapper || card.querySelector('.menu-card-actions')) return;
-
-        var actions = document.createElement('div');
-        actions.className = 'menu-card-actions';
-
-        var itemId = card.getAttribute('data-item-id') || '';
-
-        var favBtn = document.createElement('button');
-        favBtn.className = 'menu-fav-btn';
-        favBtn.innerHTML = '<svg class="fav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
-        if (itemId && MENU_FEATURES.isFav(itemId)) {
-            favBtn.innerHTML = '<svg class="fav-icon fav-filled" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
-            favBtn.classList.add('active');
-        }
-        favBtn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            if (itemId) {
-                var added = MENU_FEATURES.toggleFav(itemId);
-                if (added) {
-                    this.innerHTML = '<svg class="fav-icon fav-filled" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
-                } else {
-                    this.innerHTML = '<svg class="fav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
-                }
-                this.classList.toggle('active', added);
-            }
-        });
-
-        var rating = itemId ? MENU_FEATURES.getRating(itemId) : 0;
-        var ratingHtml = '<div class="menu-rating" data-item-id="' + itemId + '">';
-        for (var s = 1; s <= 5; s++) {
-            ratingHtml += '<span class="star' + (s <= rating ? ' active' : '') + '" data-stars="' + s + '">★</span>';
-        }
-        ratingHtml += '</div>';
-
-        actions.innerHTML = ratingHtml;
-        actions.insertBefore(favBtn, actions.firstChild);
-        imgWrapper.appendChild(actions);
-
-        var starContainer = actions.querySelector('.menu-rating');
-        if (starContainer) {
-            starContainer.querySelectorAll('.star').forEach(function(star) {
-                star.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    var sid = starContainer.getAttribute('data-item-id');
-                    var stars = parseInt(star.getAttribute('data-stars'));
-                    if (sid) {
-                        MENU_FEATURES.setRating(sid, stars);
-                        starContainer.querySelectorAll('.star').forEach(function(st, idx) {
-                            st.classList.toggle('active', idx < stars);
-                        });
-                    }
-                });
-            });
-        }
-    });
+    // Favorites and ratings are disabled - cart is now used instead
+    // This function is kept for compatibility but does nothing
 }
 
 /* ========================================
-   PWA Service Worker Registration
-   ======================================== */
+    PWA Service Worker Registration
+    ======================================== */
 
 function registerServiceWorker() {
     if ('serviceWorker' in navigator) {
         navigator.serviceWorker.register('sw.js').catch(function() {});
     }
 }
+
+/* ========================================
+   Add to Home Screen tutorial
+   ======================================== */
+
+var _installPromptEvent = null;
+
+var INSTALL_TUTORIAL_CONFIG = {
+    // Set true after adding PNG files to images/install/ (see paths below)
+    useScreenshots: false,
+    ios: [
+        'images/install/ios-step-1.png',
+        'images/install/ios-step-2.png',
+        'images/install/ios-step-3.png'
+    ],
+    android: [
+        'images/install/android-step-1.png',
+        'images/install/android-step-2.png',
+        'images/install/android-step-3.png'
+    ]
+};
+
+function getInstallTutorialImages(platform) {
+    if (!INSTALL_TUTORIAL_CONFIG.useScreenshots) {
+        return ['', '', ''];
+    }
+    return INSTALL_TUTORIAL_CONFIG[platform] || ['', '', ''];
+}
+
+window.addEventListener('beforeinstallprompt', function (e) {
+    e.preventDefault();
+    _installPromptEvent = e;
+    var nativeBtn = document.getElementById('installNativeBtn');
+    if (nativeBtn) nativeBtn.classList.remove('hidden');
+});
+
+function isStandalonePWA() {
+    return (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ||
+        window.navigator.standalone === true;
+}
+
+function isMobileDevice() {
+    return /Android|webOS|iPhone|iPad|iPod|IEMobile|Opera Mini/i.test(navigator.userAgent) ||
+        (window.matchMedia && window.matchMedia('(max-width: 768px)').matches);
+}
+
+function getMobilePlatform() {
+    var ua = navigator.userAgent || '';
+    if (/iPad|iPhone|iPod/.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+        return 'ios';
+    }
+    if (/Android/i.test(ua)) return 'android';
+    return 'android';
+}
+
+function ensureInstallTutorialDOM() {
+    if (document.getElementById('installTutorialOverlay')) return;
+
+    var overlay = document.createElement('div');
+    overlay.className = 'install-tutorial-overlay';
+    overlay.id = 'installTutorialOverlay';
+    overlay.setAttribute('aria-hidden', 'true');
+    overlay.innerHTML =
+        '<div class="install-tutorial-backdrop"></div>' +
+        '<div class="install-tutorial-panel" role="dialog" aria-labelledby="installTutorialTitle">' +
+            '<button type="button" class="install-tutorial-close" id="installTutorialClose" aria-label="Close">✕</button>' +
+            '<div class="install-tutorial-badge" aria-hidden="true">📲</div>' +
+            '<h2 class="install-tutorial-title" id="installTutorialTitle"></h2>' +
+            '<p class="install-tutorial-sub" id="installTutorialSub"></p>' +
+            '<div class="install-platform-tabs" id="installPlatformTabs">' +
+                '<button type="button" class="install-platform-tab active" data-platform="ios" id="installTabIos"></button>' +
+                '<button type="button" class="install-platform-tab" data-platform="android" id="installTabAndroid"></button>' +
+            '</div>' +
+            '<ol class="install-steps-list" id="installStepsIos"></ol>' +
+            '<ol class="install-steps-list hidden" id="installStepsAndroid"></ol>' +
+            '<button type="button" class="install-native-btn hidden" id="installNativeBtn"></button>' +
+            '<button type="button" class="install-tutorial-primary" id="installTutorialGotIt"></button>' +
+        '</div>';
+    document.body.appendChild(overlay);
+}
+
+function setInstallPlatformTab(platform) {
+    _installTutorialPlatform = platform;
+    var iosSteps = document.getElementById('installStepsIos');
+    var androidSteps = document.getElementById('installStepsAndroid');
+    document.querySelectorAll('.install-platform-tab').forEach(function (tab) {
+        tab.classList.toggle('active', tab.getAttribute('data-platform') === platform);
+    });
+    if (iosSteps) {
+        iosSteps.classList.toggle('hidden', platform !== 'ios');
+        iosSteps.hidden = platform !== 'ios';
+    }
+    if (androidSteps) {
+        androidSteps.classList.toggle('hidden', platform !== 'android');
+        androidSteps.hidden = platform !== 'android';
+    }
+}
+
+var _installTutorialPlatform = '';
+
+function buildInstallStepHtml(stepNum, caption, imageSrc) {
+    var mediaHtml = '';
+    if (imageSrc) {
+        mediaHtml =
+            '<div class="install-step-media">' +
+                '<img src="' + imageSrc + '" alt="" loading="lazy" ' +
+                'onerror="this.closest(\'.install-step-media\').classList.add(\'is-missing\')">' +
+            '</div>';
+    }
+
+    return (
+        '<li class="install-step-card">' +
+            '<div class="install-step-head">' +
+                '<span class="install-step-num">' + stepNum + '</span>' +
+                '<p class="install-step-caption">' + caption + '</p>' +
+            '</div>' +
+            mediaHtml +
+        '</li>'
+    );
+}
+
+function renderInstallStepsList(container, captions, images) {
+    if (!container) return;
+    var html = '';
+    for (var i = 0; i < captions.length; i++) {
+        html += buildInstallStepHtml(i + 1, captions[i], images && images[i] ? images[i] : '');
+    }
+    container.innerHTML = html;
+}
+
+function updateInstallTutorialUI() {
+    ensureInstallTutorialDOM();
+    var lang = localStorage.getItem('selectedLang') || 'ku';
+    var S = i18n[lang] || i18n.en;
+
+    var title = document.getElementById('installTutorialTitle');
+    var sub = document.getElementById('installTutorialSub');
+    var tabIos = document.getElementById('installTabIos');
+    var tabAndroid = document.getElementById('installTabAndroid');
+    var gotIt = document.getElementById('installTutorialGotIt');
+    var nativeBtn = document.getElementById('installNativeBtn');
+
+    if (title) title.textContent = S.installTitle;
+    if (sub) sub.textContent = S.installSubtitle;
+    if (tabIos) tabIos.textContent = S.installIos;
+    if (tabAndroid) tabAndroid.textContent = S.installAndroid;
+    if (gotIt) gotIt.textContent = S.installGotIt;
+    if (nativeBtn) nativeBtn.textContent = S.installNow;
+
+    renderInstallStepsList(
+        document.getElementById('installStepsIos'),
+        [S.iosStep1, S.iosStep2, S.iosStep3],
+        getInstallTutorialImages('ios')
+    );
+    renderInstallStepsList(
+        document.getElementById('installStepsAndroid'),
+        [S.androidStep1, S.androidStep2, S.androidStep3],
+        getInstallTutorialImages('android')
+    );
+
+    var helpBtn = document.getElementById('cafeInstallHelpBtn');
+    if (helpBtn) {
+        var helpSpan = helpBtn.querySelector('[data-i18n-install]');
+        if (helpSpan) helpSpan.textContent = S.installShowHelp;
+    }
+
+    if (document.getElementById('installTutorialOverlay')) {
+        setInstallPlatformTab(_installTutorialPlatform || getMobilePlatform());
+    }
+}
+
+function openInstallTutorial() {
+    ensureInstallTutorialDOM();
+    updateInstallTutorialUI();
+    setInstallPlatformTab(getMobilePlatform());
+
+    var nativeBtn = document.getElementById('installNativeBtn');
+    if (nativeBtn) {
+        nativeBtn.classList.toggle('hidden', !_installPromptEvent);
+    }
+
+    var overlay = document.getElementById('installTutorialOverlay');
+    if (overlay) {
+        overlay.classList.add('open');
+        overlay.setAttribute('aria-hidden', 'false');
+        document.body.classList.add('install-tutorial-open');
+    }
+}
+
+function closeInstallTutorial() {
+    var overlay = document.getElementById('installTutorialOverlay');
+    if (overlay) {
+        overlay.classList.remove('open');
+        overlay.setAttribute('aria-hidden', 'true');
+        document.body.classList.remove('install-tutorial-open');
+    }
+}
+
+function setupInstallTutorial() {
+    ensureInstallTutorialDOM();
+    updateInstallTutorialUI();
+    setInstallPlatformTab(getMobilePlatform());
+
+    var overlay = document.getElementById('installTutorialOverlay');
+    if (!overlay || overlay.dataset.wired === '1') return;
+    overlay.dataset.wired = '1';
+
+    var closeBtn = document.getElementById('installTutorialClose');
+    var gotIt = document.getElementById('installTutorialGotIt');
+    var nativeBtn = document.getElementById('installNativeBtn');
+
+    if (closeBtn) closeBtn.addEventListener('click', closeInstallTutorial);
+    if (gotIt) gotIt.addEventListener('click', closeInstallTutorial);
+
+    overlay.addEventListener('click', function (e) {
+        if (e.target === overlay || e.target.classList.contains('install-tutorial-backdrop')) {
+            closeInstallTutorial();
+        }
+    });
+
+    document.querySelectorAll('.install-platform-tab').forEach(function (tab) {
+        tab.addEventListener('click', function () {
+            setInstallPlatformTab(tab.getAttribute('data-platform'));
+        });
+    });
+
+    if (nativeBtn) {
+        nativeBtn.addEventListener('click', function () {
+            if (!_installPromptEvent) return;
+            _installPromptEvent.prompt();
+            _installPromptEvent.userChoice.finally(function () {
+                _installPromptEvent = null;
+                nativeBtn.classList.add('hidden');
+                closeInstallTutorial();
+            });
+        });
+    }
+}
+
+window.openInstallTutorial = openInstallTutorial;
 
 /* ========================================
    Utilities
@@ -896,3 +2479,44 @@ function normalizeImageUrl(url) {
         return null;
     }
 }
+
+/* ========================================
+   Logo navigation (single + double click)
+   ======================================== */
+
+window.replayLogoSplash = function (splashEl, durationMs) {
+    if (!splashEl) splashEl = document.getElementById('logoSplash');
+    if (!splashEl) return;
+
+    var ms = durationMs || 1200;
+    splashEl.style.display = 'flex';
+    splashEl.classList.remove('hidden');
+    clearTimeout(window.replayLogoSplash._hideTimer);
+    window.replayLogoSplash._hideTimer = setTimeout(function () {
+        splashEl.classList.add('hidden');
+        setTimeout(function () { splashEl.style.display = 'none'; }, 500);
+    }, ms);
+};
+
+window.setupLogoClickActions = function (logoEl, onSingleClick, doubleClickHref) {
+    if (!logoEl) return;
+
+    var clicks = 0;
+    var timer = null;
+    var doubleHref = doubleClickHref || 'login.html';
+
+    logoEl.style.cursor = 'pointer';
+    logoEl.addEventListener('click', function () {
+        clicks++;
+        if (clicks === 1) {
+            timer = setTimeout(function () {
+                clicks = 0;
+                if (typeof onSingleClick === 'function') onSingleClick();
+            }, 350);
+        } else if (clicks === 2) {
+            clearTimeout(timer);
+            clicks = 0;
+            window.location.href = doubleHref;
+        }
+    });
+};
