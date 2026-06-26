@@ -8,6 +8,7 @@ let categoriesUnsubscribe = null;
 let itemsUnsubscribe = null;
 var dashboardUnsubscribes = [];
 var _itemsSnapDocs = [];
+let itemsActiveCategory = 'all';
 
 function stopCategoriesListener() {
     if (categoriesUnsubscribe) {
@@ -523,13 +524,27 @@ function getCategoryLabel(categoryId, lang, catMap) {
 
 function loadManageItems() {
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
+    itemsActiveCategory = 'all';
     var adminContent = document.getElementById('adminContent');
     adminContent.innerHTML =
         '<div class="card">' +
             '<h2>' + S.manageItems + '</h2>' +
             '<button class="btn-primary" id="addItemBtn" style="margin-bottom:16px;">' + S.addNewItem + '</button>' +
             '<div class="form-group"><input type="text" id="itemSearch" placeholder="' + S.searchItems + '"></div>' +
-            '<div class="form-group"><select id="categoryFilter"><option value="all">' + S.allCategories + '</option></select></div>' +
+            '<div class="form-group admin-items-cat-filter">' +
+                '<div class="admin-cat-picker" id="itemsCatPicker">' +
+                    '<button type="button" class="admin-cat-picker-btn" id="itemsCatPickerBtn" aria-expanded="false">' +
+                        '<span class="admin-cat-picker-label" id="itemsCatPickerLabel">' + escapeHtmlText(S.allCategories) + '</span>' +
+                        '<span class="admin-cat-picker-chevron" aria-hidden="true">▾</span>' +
+                    '</button>' +
+                    '<div class="admin-cat-picker-panel" id="itemsCatPickerPanel" hidden>' +
+                        '<div class="admin-menu-category-bar">' +
+                            '<div class="admin-category-scroll" id="itemsCategoryScroll"></div>' +
+                        '</div>' +
+                    '</div>' +
+                '</div>' +
+                '<input type="hidden" id="categoryFilter" value="all">' +
+            '</div>' +
             '<div id="itemsList"><div class="loading">Loading...</div></div>' +
         '</div>' +
         '<div id="itemModal" class="modal-overlay">' +
@@ -582,6 +597,7 @@ function loadManageItems() {
             '</div>' +
         '</div>';
     loadCategoriesDropdown();
+    loadCategoryFilter();
     refreshCategoriesCache();
     wireItemEvents();
     startItemsListener();
@@ -599,7 +615,8 @@ function collectItemDocsFromSnap(snap) {
     var docs = [];
     snap.forEach(function (d) {
         var data = d.data();
-        if (data.category && data.category !== 'Water') docs.push(d);
+        if (data.category === 'Water') return;
+        docs.push(d);
     });
     return docs;
 }
@@ -627,10 +644,12 @@ function startItemsListener() {
 
     itemsUnsubscribe = db.collection('menuItems').onSnapshot(function (snap) {
         _itemsSnapDocs = collectItemDocsFromSnap(snap);
+        refreshCategoryFilterOptions();
+        refreshItemCategoryDropdown();
         var searchEl = document.getElementById('itemSearch');
         var catEl = document.getElementById('categoryFilter');
         var searchTerm = searchEl ? searchEl.value : '';
-        var cat = catEl ? catEl.value : 'all';
+        var cat = catEl ? catEl.value : itemsActiveCategory;
         renderItemsList(filterItemDocs(_itemsSnapDocs, searchTerm, cat));
 
         var cashierCache = [];
@@ -642,6 +661,13 @@ function startItemsListener() {
         });
         localStorage.setItem('cachedCashierItems', JSON.stringify(cashierCache));
         localStorage.setItem('cachedMenuItems', JSON.stringify(menuCache));
+
+        var catNames = {};
+        _itemsSnapDocs.forEach(function (d) {
+            var c = d.data().category;
+            if (c && c !== 'Water') catNames[c] = true;
+        });
+        localStorage.setItem('cachedMenuCategoryNames', JSON.stringify(Object.keys(catNames)));
     }, function (e) {
         console.error('Items listener error:', e);
         loadItemsList();
@@ -662,95 +688,221 @@ function loadItemsList() {
 }
 
 function loadCategoriesDropdown() {
-    var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     var select = document.getElementById('itemCategory');
     if (!select) return Promise.resolve();
 
+    if (!window.db) {
+        refreshItemCategoryDropdown();
+        return Promise.resolve();
+    }
+
     return db.collection('categories').get().then(function (snap) {
-        var lang = localStorage.getItem('selectedLang') || 'ku';
         var categories = [];
-        select.innerHTML = '<option value="">' + S.select + '</option>';
         snap.forEach(function (doc) {
-            var cat = doc.data();
-            categories.push({ id: doc.id, data: cat });
-            var name = cat['name_' + lang] || cat.name_en || S.unnamed;
-            select.innerHTML += '<option value="' + doc.id + '">' + name + '</option>';
+            categories.push({ id: doc.id, data: doc.data() });
         });
-        // Cache categories for offline access
         localStorage.setItem('cachedCategories', JSON.stringify(categories));
+        refreshItemCategoryDropdown();
     }).catch(function (e) {
         console.error('Error loading categories:', e);
-        // Try to load from cache
-        loadCategoriesFromCache();
+        refreshItemCategoryDropdown();
     });
 }
 
 function loadCategoriesFromCache() {
+    refreshItemCategoryDropdown();
+}
+
+function escapeHtmlAttr(str) {
+    return String(str || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/'/g, '&#39;').replace(/</g, '&lt;');
+}
+
+function escapeHtmlText(str) {
+    return String(str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function getUniqueItemCategoryIds(docs) {
+    var names = {};
+    (docs || []).forEach(function (d) {
+        var c = typeof d.data === 'function' ? d.data().category : (d.category || null);
+        if (c && c !== 'Water') names[c] = true;
+    });
+    return Object.keys(names);
+}
+
+function getAllItemCategoryIdsForFilter() {
+    var names = {};
+    function addName(c) {
+        if (c && c !== 'Water') names[c] = true;
+    }
+    getUniqueItemCategoryIds(_itemsSnapDocs).forEach(addName);
+    readCachedCategories().forEach(function (c) {
+        if (c && c.id) addName(c.id);
+    });
+    try {
+        JSON.parse(localStorage.getItem('cachedMenuItems') || '[]').forEach(function (it) {
+            addName(it.category);
+        });
+    } catch (e) {}
+    try {
+        JSON.parse(localStorage.getItem('cachedCashierItems') || '[]').forEach(function (it) {
+            addName(it.v && it.v.category);
+        });
+    } catch (e) {}
+    try {
+        JSON.parse(localStorage.getItem('cachedMenuCategoryNames') || '[]').forEach(addName);
+    } catch (e) {}
+    return Object.keys(names).sort();
+}
+
+function buildCategorySelectOptions(categories, itemCategoryIds, lang, S, allOption) {
+    var seen = {};
+    var html = allOption ? '<option value="all">' + S.allCategories + '</option>' : '<option value="">' + S.select + '</option>';
+    (categories || []).forEach(function (c) {
+        if (!c || !c.id || seen[c.id]) return;
+        seen[c.id] = true;
+        var cat = c.data || {};
+        var name = cat['name_' + lang] || cat.name_en || cat.name_ku || cat.name_ar || c.id || S.unnamed;
+        html += '<option value="' + escapeHtmlAttr(c.id) + '">' + escapeHtmlText(name) + '</option>';
+    });
+    (itemCategoryIds || []).forEach(function (id) {
+        if (!id || seen[id]) return;
+        seen[id] = true;
+        var label = getCategoryLabel(id, lang, buildCategoryMapFromCache());
+        html += '<option value="' + escapeHtmlAttr(id) + '">' + escapeHtmlText(label) + '</option>';
+    });
+    return html;
+}
+
+function adminAllCategoryIconSvg() {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">' +
+        '<path d="M12 3v2M12 19v2M3 12h2M19 12h2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4l1.4-1.4M17 7l1.4-1.4"/>' +
+        '<circle cx="12" cy="12" r="3" fill="currentColor" stroke="none"/></svg>';
+}
+
+function getAdminCategoryIcon(catId, catMap) {
+    var data = catMap && catMap[catId];
+    if (data && data.image) {
+        return '<img class="cat-icon" src="' + escapeHtmlAttr(data.image) + '" alt="" onerror="this.onerror=null;this.style.display=\'none\'">';
+    }
+    return '<svg class="cat-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="12" r="9"/></svg>';
+}
+
+function closeItemsCatPicker() {
+    var panel = document.getElementById('itemsCatPickerPanel');
+    var btn = document.getElementById('itemsCatPickerBtn');
+    if (panel) panel.hidden = true;
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+function openItemsCatPicker() {
+    var panel = document.getElementById('itemsCatPickerPanel');
+    var btn = document.getElementById('itemsCatPickerBtn');
+    if (panel) panel.hidden = false;
+    if (btn) btn.setAttribute('aria-expanded', 'true');
+}
+
+function updateItemsCatPickerLabel() {
+    var labelEl = document.getElementById('itemsCatPickerLabel');
+    if (!labelEl) return;
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
+    var lang = localStorage.getItem('selectedLang') || 'ku';
+    if (itemsActiveCategory === 'all') {
+        labelEl.textContent = S.allCategories;
+        return;
+    }
+    labelEl.textContent = getCategoryLabel(itemsActiveCategory, lang, buildCategoryMapFromCache());
+}
+
+function selectItemsCategory(catId) {
+    itemsActiveCategory = catId || 'all';
+    var cf = document.getElementById('categoryFilter');
+    if (cf) cf.value = itemsActiveCategory;
+    updateItemsCatPickerLabel();
+    renderItemsCategoryBar();
+    closeItemsCatPicker();
+    var search = document.getElementById('itemSearch');
+    applyItemFilter(search ? search.value : '', itemsActiveCategory);
+}
+
+function renderItemsCategoryBar() {
+    var scroll = document.getElementById('itemsCategoryScroll');
+    if (!scroll) return;
+    var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
+    var lang = localStorage.getItem('selectedLang') || 'ku';
+    var catMap = buildCategoryMapFromCache();
+    var cats = getAllItemCategoryIdsForFilter();
+    var active = itemsActiveCategory || 'all';
+
+    var html = '<button type="button" class="category-btn category-btn-all' + (active === 'all' ? ' active' : '') + '" data-cat="all">' +
+        '<span class="cat-all-mark" aria-hidden="true">' + adminAllCategoryIconSvg() + '</span>' +
+        '<span class="cat-label">' + escapeHtmlText(S.allCategories) + '</span></button>';
+
+    cats.forEach(function (id) {
+        var label = getCategoryLabel(id, lang, catMap);
+        var icon = getAdminCategoryIcon(id, catMap);
+        html += '<button type="button" class="category-btn' + (active === id ? ' active' : '') + '" data-cat="' + escapeHtmlAttr(id) + '">' +
+            icon + '<span class="cat-label">' + escapeHtmlText(label) + '</span></button>';
+    });
+
+    if (!cats.length) {
+        html += '<span class="items-cat-empty">' + escapeHtmlText(S.noCategories || 'No categories yet') + '</span>';
+    }
+
+    scroll.innerHTML = html;
+    scroll.querySelectorAll('.category-btn').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+            selectItemsCategory(this.getAttribute('data-cat') || 'all');
+        });
+    });
+    updateItemsCatPickerLabel();
+}
+
+function refreshCategoryFilterOptions() {
+    renderItemsCategoryBar();
+}
+
+function refreshItemCategoryDropdown() {
     var select = document.getElementById('itemCategory');
     if (!select) return;
-
-    var cached = localStorage.getItem('cachedCategories');
-    if (cached) {
-        try {
-            var categories = JSON.parse(cached);
-            var lang = localStorage.getItem('selectedLang') || 'ku';
-            select.innerHTML = '<option value="">' + S.select + '</option>';
-            categories.forEach(function (cat) {
-                var name = cat.data['name_' + lang] || cat.data.name_en || S.unnamed;
-                select.innerHTML += '<option value="' + cat.id + '">' + name + '</option>';
-            });
-            console.log('Loaded categories from cache');
-        } catch (e) {
-            console.error('Error parsing cached categories:', e);
+    var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
+    var lang = localStorage.getItem('selectedLang') || 'ku';
+    var prev = select.value;
+    select.innerHTML = buildCategorySelectOptions(
+        readCachedCategories(),
+        getAllItemCategoryIdsForFilter(),
+        lang,
+        S,
+        false
+    );
+    for (var i = 0; i < select.options.length; i++) {
+        if (select.options[i].value === prev) {
+            select.selectedIndex = i;
+            break;
         }
     }
 }
 
 function loadCategoryFilter() {
-    var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     var cf = document.getElementById('categoryFilter');
     if (!cf) return;
+
+    if (!window.db) {
+        refreshCategoryFilterOptions();
+        return;
+    }
 
     db.collection('categories').get().then(function (snap) {
-        var lang = localStorage.getItem('selectedLang') || 'ku';
         var categories = [];
-        cf.innerHTML = '<option value="all">' + S.allCategories + '</option>';
         snap.forEach(function (doc) {
-            var cat = doc.data();
-            categories.push({ id: doc.id, data: cat });
-            var name = cat['name_' + lang] || cat.name_en || S.unnamed;
-            cf.innerHTML += '<option value="' + doc.id + '">' + name + '</option>';
+            categories.push({ id: doc.id, data: doc.data() });
         });
-        // Cache categories for offline access
         localStorage.setItem('cachedCategories', JSON.stringify(categories));
+        refreshCategoryFilterOptions();
     }).catch(function (e) {
         console.error('Error loading category filter:', e);
-        // Try to load from cache
-        loadCategoryFilterFromCache();
+        refreshCategoryFilterOptions();
     });
-}
-
-function loadCategoryFilterFromCache() {
-    var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
-    var cf = document.getElementById('categoryFilter');
-    if (!cf) return;
-
-    var cached = localStorage.getItem('cachedCategories');
-    if (cached) {
-        try {
-            var categories = JSON.parse(cached);
-            var lang = localStorage.getItem('selectedLang') || 'ku';
-            cf.innerHTML = '<option value="all">' + S.allCategories + '</option>';
-            categories.forEach(function (cat) {
-                var name = cat.data['name_' + lang] || cat.data.name_en || S.unnamed;
-                cf.innerHTML += '<option value="' + cat.id + '">' + name + '</option>';
-            });
-            console.log('Loaded category filter from cache');
-        } catch (e) {
-            console.error('Error parsing cached categories:', e);
-        }
-    }
 }
 
 function renderItemsList(items) {
@@ -864,15 +1016,27 @@ function wireItemEvents() {
     wireImageFileInput('itemImageFile', 'itemImageURL', 'itemImagePreview');
 
     var search = document.getElementById('itemSearch');
-    var catFilter = document.getElementById('categoryFilter');
     if (search) {
         search.addEventListener('input', function () {
-            applyItemFilter(search.value, catFilter ? catFilter.value : 'all');
+            applyItemFilter(search.value, itemsActiveCategory);
         });
     }
-    if (catFilter) {
-        catFilter.addEventListener('change', function () {
-            applyItemFilter(search ? search.value : '', catFilter.value);
+
+    var pickerBtn = document.getElementById('itemsCatPickerBtn');
+    if (pickerBtn) {
+        pickerBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var panel = document.getElementById('itemsCatPickerPanel');
+            if (panel && panel.hidden) openItemsCatPicker();
+            else closeItemsCatPicker();
+        });
+    }
+    if (!window._itemsCatPickerDocClick) {
+        window._itemsCatPickerDocClick = true;
+        document.addEventListener('click', function (e) {
+            var root = document.getElementById('itemsCatPicker');
+            if (!root || root.contains(e.target)) return;
+            closeItemsCatPicker();
         });
     }
 
@@ -910,12 +1074,13 @@ function wireItemEvents() {
 }
 
 function applyItemFilter(searchTerm, cat) {
+    cat = cat || itemsActiveCategory || 'all';
     if (_itemsSnapDocs.length > 0) {
         renderItemsList(filterItemDocs(_itemsSnapDocs, searchTerm, cat));
         return;
     }
     db.collection('menuItems').get().then(function (snap) {
-        var docs = snap.docs;
+        var docs = snap.docs.filter(function (d) { return d.data().category !== 'Water'; });
         if (searchTerm) {
             var lang = localStorage.getItem('selectedLang') || 'ku';
             var term = searchTerm.toLowerCase();
