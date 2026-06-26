@@ -256,7 +256,7 @@ function warmAdminOfflineCache(done) {
     });
 }
 
-var ADMIN_VERSION = 'v85';
+var ADMIN_VERSION = 'v86';
 
 function getDashboardMonth() {
     var sel = document.getElementById('dashboardMonthSelect');
@@ -724,9 +724,6 @@ document.addEventListener('DOMContentLoaded', function () {
         }
     });
 
-    if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('./sw.js').catch(function () {});
-    }
 });
 
 function wireAdminLangButtons() {

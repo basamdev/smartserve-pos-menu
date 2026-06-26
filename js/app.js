@@ -1775,9 +1775,7 @@ function isAdminAppUi() {
 }
 
 function setupOfflineDetection() {
-    if (!isAdminAppUi()) {
-        registerServiceWorker();
-    }
+    registerServiceWorker();
 
     window.addEventListener('online', function () {
         isOffline = false;
@@ -2599,6 +2597,28 @@ function renderMenuCardsWithFeatures() {
     PWA Service Worker Registration
     ======================================== */
 
+function checkForAppUpdate() {
+    if (!navigator.onLine) return;
+    fetch('./version.txt?_=' + Date.now(), { cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.text() : ''; })
+        .then(function (text) {
+            var remote = (text || '').trim();
+            if (!remote) return;
+            var key = 'aliCafeAppBuild';
+            var seen = localStorage.getItem(key);
+            if (seen && seen !== remote) {
+                localStorage.setItem(key, remote);
+                if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+                    navigator.serviceWorker.controller.postMessage({ type: 'SKIP_WAITING' });
+                }
+                window.location.reload();
+                return;
+            }
+            if (!seen) localStorage.setItem(key, remote);
+        })
+        .catch(function () {});
+}
+
 function registerServiceWorker() {
     if (!('serviceWorker' in navigator)) return;
 
@@ -2623,10 +2643,27 @@ function registerServiceWorker() {
                 }
             });
         });
+
+        function pokeServiceWorker() {
+            reg.update().catch(function () {});
+            checkForAppUpdate();
+        }
+
+        pokeServiceWorker();
+        document.addEventListener('visibilitychange', function () {
+            if (document.visibilityState === 'visible') pokeServiceWorker();
+        });
+        window.addEventListener('focus', pokeServiceWorker);
+        window.addEventListener('pageshow', function (event) {
+            if (event.persisted) pokeServiceWorker();
+        });
     }).catch(function (err) {
         console.warn('Service worker registration failed:', err);
     });
 }
+
+window.registerServiceWorker = registerServiceWorker;
+window.checkForAppUpdate = checkForAppUpdate;
 
 /* ========================================
    Add to Home Screen — image tutorial (menu only)

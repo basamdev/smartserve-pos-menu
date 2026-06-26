@@ -1,4 +1,5 @@
-const CACHE_NAME = 'ali-cafe-v85';
+const CACHE_NAME = 'ali-cafe-v86';
+const APP_SHELL_PATHS = /\.(html|css|js)$/i;
 const FIREBASE_SDK_URLS = [
     'https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js',
     'https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js',
@@ -7,18 +8,7 @@ const FIREBASE_SDK_URLS = [
 // Relative paths — the app is served from a subfolder (e.g. /ali-cafe-menu/),
 // so root-absolute paths like '/index.html' would 404 and break install.
 const STATIC_ASSETS = [
-    './',
-    './index.html',
-    './menu.html',
-    './admin.html',
-    './login.html',
-    './css/style.css',
-    './css/admin.css',
-    './css/login.css',
-    './js/firebase.js',
-    './js/app.js',
-    './js/admin.js',
-    './js/login.js',
+    './manifest.json',
     './assets/ali-logo-page.jpg',
     './assets/ali-new-logo.jpg',
     './images/flag-kurdistan.svg',
@@ -26,9 +16,7 @@ const STATIC_ASSETS = [
     './assets/icon-192.png',
     './assets/icon-512.png',
     './assets/icon-maskable-512.png',
-    './assets/logo.png',
     './assets/logo.svg',
-    './manifest.json',
     './images/install/ios-step-1.png',
     './images/install/ios-step-2.png',
     './images/install/ios-step-3.png',
@@ -151,9 +139,9 @@ self.addEventListener('fetch', function (event) {
     // Network-first for the app shell (HTML/CSS/JS) so code/style changes show
     // up immediately. Falls back to cache only when offline.
     var isSameOrigin = url.origin === self.location.origin;
-    if (isSameOrigin && (request.mode === 'navigate' || /\.(html|css|js)$/i.test(url.pathname))) {
+    if (isSameOrigin && (request.mode === 'navigate' || APP_SHELL_PATHS.test(url.pathname))) {
         event.respondWith(
-            fetch(request).then(function (response) {
+            fetch(request, { cache: 'no-store' }).then(function (response) {
                 if (response && response.ok) {
                     var clone = response.clone();
                     caches.open(CACHE_NAME).then(function (cache) { cache.put(request, clone); });
@@ -162,7 +150,11 @@ self.addEventListener('fetch', function (event) {
             }).catch(function () {
                 return caches.match(request).then(function (cached) {
                     if (cached) return cached;
-                    if (request.mode === 'navigate') return caches.match('./index.html');
+                    if (request.mode === 'navigate') {
+                        return caches.match('./index.html').then(function (fallback) {
+                            return fallback || caches.match('./admin.html');
+                        });
+                    }
                     return new Response('', { status: 503, statusText: 'Offline' });
                 });
             })
