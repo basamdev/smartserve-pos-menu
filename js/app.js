@@ -723,7 +723,41 @@ function firestoreGetWithTimeout(ref, ms) {
     ]);
 }
 
-var APP_VERSION = 'v67';
+var APP_VERSION = 'v70';
+
+function clearMenuLoadingSpinner() {
+    var container = document.getElementById('menuGrid');
+    if (!container) return;
+    if (container.querySelector('.loading-menu')) {
+        container.innerHTML = '';
+    }
+}
+
+function menuStillLoading() {
+    var container = document.getElementById('menuGrid');
+    return !!(container && container.querySelector('.loading-menu'));
+}
+
+function paintMenuFromItems(items, options) {
+    options = options || {};
+    if (!items || !items.length) return false;
+    cachedMenuItems = items;
+    _lastMenuItemsSignature = menuItemsSignature(items);
+    clearMenuLoadingSpinner();
+    renderCategories(items, {
+        autoSelect: options.autoSelect !== false,
+        forceRebuild: true,
+        forceFirst: true
+    });
+    var cat = _activeCategory || (isEmenuPage() ? ALL_CATEGORY_ID : null);
+    if (cat) {
+        switchCategory(cat, { silent: true, immediate: true });
+    } else {
+        autoSelectCategoryAfterRender(true);
+    }
+    _menuUiReady = true;
+    return true;
+}
 
 function restFieldValue(field) {
     if (!field || typeof field !== 'object') return null;
@@ -826,7 +860,7 @@ async function loadCategoriesFromFirebase() {
 function applyMenuItemsUpdate(items, options) {
     options = options || {};
     const sig = menuItemsSignature(items);
-    if (sig === _lastMenuItemsSignature && !options.force) return;
+    if (sig === _lastMenuItemsSignature && !options.force && !menuStillLoading()) return;
     _lastMenuItemsSignature = sig;
 
     cachedMenuItems = items;
@@ -835,12 +869,10 @@ function applyMenuItemsUpdate(items, options) {
     const container = document.getElementById('menuGrid');
     if (!container) return;
 
-    if (!_menuUiReady) {
-        if (container.querySelector('.loading-menu')) {
-            container.innerHTML = '';
-        }
-        renderCategories(items, { autoSelect: true, forceFirst: true, forceRebuild: true });
-        _menuUiReady = true;
+    clearMenuLoadingSpinner();
+
+    if (!_menuUiReady || menuStillLoading()) {
+        paintMenuFromItems(items, { autoSelect: true });
         return;
     }
 
@@ -867,13 +899,8 @@ function showCachedMenuIfAvailable() {
     try {
         const items = normalizeMenuItemsList(JSON.parse(cached));
         if (!items.length) return false;
-
-        cachedMenuItems = items;
-        _lastMenuItemsSignature = menuItemsSignature(items);
-        renderCategories(items, { autoSelect: true, forceRebuild: true });
-        _menuUiReady = true;
         console.log('Shown from cache:', items.length);
-        return true;
+        return paintMenuFromItems(items, { autoSelect: true });
     } catch (e) {
         console.error('Error parsing cache:', e);
         return false;
@@ -894,14 +921,14 @@ async function loadMenuItems() {
 
     if (loadMenuItems._loadTimer) clearTimeout(loadMenuItems._loadTimer);
     loadMenuItems._loadTimer = setTimeout(function () {
-        if (!_menuUiReady && container.querySelector('.loading-menu')) {
+        if (menuStillLoading()) {
             fetchMenuViaRest(12000).then(function (items) {
                 applyMenuItemsUpdate(items, { force: true });
             }).catch(function () {
                 fetchMenuItemsFallback(strings, 'timeout');
             });
         }
-    }, 5000);
+    }, 4000);
 
     const hadCache = showCachedMenuIfAvailable();
     if (!hadCache) {
@@ -957,14 +984,14 @@ async function loadMenuItems() {
 
 function handleMenuLoadFailure(error, strings, hadCache) {
     loadFromCache();
-    if (_menuUiReady || hadCache) return;
+    if (_menuUiReady && !menuStillLoading()) return;
     showMenuLoadError(strings, error);
     fetchMenuItemsFallback(strings, 'snapshot-failed');
 }
 
 function showMenuLoadError(strings, error) {
     var container = document.getElementById('menuGrid');
-    if (!container || _menuUiReady) return;
+    if (!container || (_menuUiReady && !menuStillLoading())) return;
     var msg = (error && error.message) ? error.message : '';
     if (msg.indexOf('permission') !== -1 || msg.indexOf('Missing or insufficient') !== -1) {
         msg = strings.menuConnectionHint;
@@ -992,7 +1019,7 @@ function showMenuLoadError(strings, error) {
 }
 
 function fetchMenuItemsFallback(strings, reason) {
-    if (_menuUiReady) return;
+    if (_menuUiReady && !menuStillLoading()) return;
     fetchMenuViaRest(10000).then(function (items) {
         if (loadMenuItems._loadTimer) {
             clearTimeout(loadMenuItems._loadTimer);
@@ -1027,19 +1054,19 @@ function loadFromCache() {
     if (cached) {
         try {
             var items = normalizeMenuItemsList(JSON.parse(cached));
-            cachedMenuItems = items;
-            _lastMenuItemsSignature = menuItemsSignature(items);
-            console.log('Loaded from cache:', items.length);
-            renderCategories(items, { autoSelect: true, forceRebuild: true });
-            _menuUiReady = true;
-            if (items.length === 0) {
-                container.innerHTML = '';
+            if (items.length > 0) {
+                console.log('Loaded from cache:', items.length);
+                paintMenuFromItems(items, { autoSelect: true });
+                return;
             }
+            clearMenuLoadingSpinner();
+            container.innerHTML = '';
         } catch (e) {
             console.error('Error parsing cache:', e);
-            container.innerHTML = `<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>${strings.errorLoadingMenu}</p>`;
+            container.innerHTML = '<div class="empty-state"><div class="empty-state-icon">⚠️</div><p>' + strings.errorLoadingMenu + '</p>';
         }
     } else {
+        clearMenuLoadingSpinner();
         container.innerHTML = '';
     }
 }
@@ -1183,7 +1210,7 @@ function autoSelectCategoryAfterRender(forceFirst) {
     if (target) {
         var exists = scroll.querySelector('.category-btn[data-category="' + target + '"]');
         if (exists) {
-            switchCategory(target);
+            switchCategory(target, { immediate: true });
         }
     }
 }
@@ -1225,7 +1252,7 @@ function clearCategorySelection() {
 function switchCategory(category, options) {
     options = options || {};
     if (_activeCategory === category) {
-        if (options.silent) {
+        if (options.silent || options.immediate || menuStillLoading()) {
             renderMenuItems(filterItemsByCategory(cachedMenuItems, category));
             renderMenuCardsWithFeatures();
             return;
@@ -1252,7 +1279,7 @@ function switchCategory(category, options) {
     const grid = document.getElementById('menuGrid');
     if (!grid) return;
 
-    if (options.silent) {
+    if (options.silent || options.immediate) {
         renderMenuItems(filterItemsByCategory(cachedMenuItems, category));
         renderMenuCardsWithFeatures();
         return;
