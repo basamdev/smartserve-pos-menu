@@ -256,7 +256,7 @@ function warmAdminOfflineCache(done) {
     });
 }
 
-var ADMIN_VERSION = 'v79';
+var ADMIN_VERSION = 'v80';
 
 function getDashboardMonth() {
     var sel = document.getElementById('dashboardMonthSelect');
@@ -681,7 +681,7 @@ document.addEventListener('DOMContentLoaded', function () {
     };
     document.querySelectorAll('img.sidebar-brand-icon, img.logo').forEach(window.fallbackLogo);
 
-    applyAdminAccent(localStorage.getItem('adminAccent') || 'gold');
+    applyAdminAccent(localStorage.getItem('adminAccent') || 'sapphire');
     initAdminPanel();
     wireAdminLangButtons();
     initSidebar();
@@ -3248,7 +3248,7 @@ function updateOrderDisplay() {
 
 function applyAdminAccent(accent) {
     var allowed = ['gold', 'emerald', 'sapphire', 'amethyst', 'ruby', 'sunset', 'rose', 'graphite', 'cyan'];
-    if (allowed.indexOf(accent) === -1) accent = 'gold';
+    if (allowed.indexOf(accent) === -1) accent = 'sapphire';
     document.documentElement.setAttribute('data-accent', accent);
     try { localStorage.setItem('adminAccent', accent); } catch (e) {}
     var themeMeta = { gold: '#D4AF37', emerald: '#10B981', sapphire: '#3B82F6', amethyst: '#8B5CF6', ruby: '#F43F5E', sunset: '#F97316', rose: '#EC4899', graphite: '#94A3B8', cyan: '#06B6D4' };
@@ -3267,9 +3267,9 @@ function loadSettings() {
       };
       var TL = themeLabels[localStorage.getItem('selectedLang') || 'ku'] || themeLabels.en;
       var themes = [
+          { id: 'sapphire', color: '#3B82F6', dark: '#1D4ED8' },
           { id: 'gold', color: '#D4AF37', dark: '#B8910C' },
           { id: 'emerald', color: '#10B981', dark: '#047857' },
-          { id: 'sapphire', color: '#3B82F6', dark: '#1D4ED8' },
           { id: 'amethyst', color: '#8B5CF6', dark: '#6D28D9' },
           { id: 'ruby', color: '#F43F5E', dark: '#BE123C' },
           { id: 'sunset', color: '#F97316', dark: '#C2410C' },
@@ -3277,7 +3277,7 @@ function loadSettings() {
           { id: 'cyan', color: '#06B6D4', dark: '#0E7490' },
           { id: 'graphite', color: '#94A3B8', dark: '#475569' }
       ];
-      var currentAccent = localStorage.getItem('adminAccent') || 'gold';
+      var currentAccent = localStorage.getItem('adminAccent') || 'sapphire';
       var swatchesHtml = themes.map(function (t) {
           var glow = 'rgba(0,0,0,0.25)';
           return '<button type="button" class="theme-swatch' + (t.id === currentAccent ? ' active' : '') + '" data-accent="' + t.id + '" ' +

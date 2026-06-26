@@ -13,29 +13,29 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Ali Coffee">
-    <meta name="theme-color" content="#D4AF37">
+    <meta name="theme-color" content="#3B82F6">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="css/admin.css?v=22">
+    <link rel="stylesheet" href="css/admin.css?v=23">
     <script>
         (function () {
             try {
-                var a = localStorage.getItem('adminAccent') || 'gold';
+                var a = localStorage.getItem('adminAccent') || 'sapphire';
                 document.documentElement.setAttribute('data-accent', a);
             } catch (e) {
-                document.documentElement.setAttribute('data-accent', 'gold');
+                document.documentElement.setAttribute('data-accent', 'sapphire');
             }
         })();
     </script>
 </head>
-<body>
+<body class="admin-page">
     <div class="admin-container admin-layout">
         <div class="sidebar-overlay" id="sidebarOverlay"></div>
         <div class="admin-sidebar" id="adminSidebar">
             <div class="sidebar-header">
                 <div class="sidebar-brand">
-                    <img src="assets/logo.png" alt="Ali Coffee" class="sidebar-brand-icon" onclick="window.location.href='menu.html'" onerror="fallbackLogo(this)">
+                    <img src="assets/logo.png?v=80" alt="Ali Coffee" class="sidebar-brand-icon" onclick="window.location.href='menu.html'" onerror="fallbackLogo(this)">
                     <span class="sidebar-brand-text">Ali Coffee</span>
                 </div>
                 <button class="sidebar-close" id="sidebarClose" aria-label="Close menu">✕</button>
@@ -89,9 +89,19 @@
     <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js"></script>
     <script src="js/firebase.js?v=26"></script>
     <script src="js/app.js?v=71"></script>
-    <script src="js/admin.js?v=48"></script>
+    <script src="js/admin.js?v=49"></script>
     <script>
         function fallbackLogo(img) {
+            if (!img.dataset.retry) {
+                img.dataset.retry = '1';
+                img.src = 'assets/logo.png?v=80';
+                return;
+            }
+            if (!img.dataset.retry2) {
+                img.dataset.retry2 = '1';
+                img.src = 'images/ali-cafe-logo-circular.png?v=80';
+                return;
+            }
             img.onerror = null;
             img.style.display = 'none';
             if (!img.dataset.fallback) {
@@ -99,7 +109,7 @@
                 var wrap = img.closest('.sidebar-brand') || img.parentElement;
                 if (wrap) {
                     var span = document.createElement('span');
-                    span.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,#D4AF37,#C8A02A);color:#000;font-weight:800;font-size:1.1rem;font-family:var(--font-body);flex-shrink:0;border:2px solid rgba(212,175,55,0.3);box-shadow:0 2px 12px rgba(212,175,55,0.2);';
+                    span.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,#3B82F6,#1D4ED8);color:#fff;font-weight:800;font-size:1.1rem;font-family:var(--font-body);flex-shrink:0;border:2px solid rgba(59,130,246,0.35);box-shadow:0 2px 12px rgba(59,130,246,0.25);';
                     span.textContent = 'AC';
                     wrap.insertBefore(span, wrap.firstChild);
                 }
