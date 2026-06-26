@@ -74,11 +74,17 @@ if (shouldEnablePersistence) {
                 }
                 return db;
             });
+        var persistenceSettled = false;
         window.dbReady = Promise.race([
-            persistencePromise,
+            persistencePromise.then(function (db) {
+                persistenceSettled = true;
+                return db;
+            }),
             new Promise(function (resolve) {
                 setTimeout(function () {
-                    console.warn('Firestore persistence slow — continuing without waiting');
+                    if (!persistenceSettled) {
+                        console.log('Firebase ready — offline cache still loading in background (normal on mobile).');
+                    }
                     resolve(db);
                 }, 4000);
             })
