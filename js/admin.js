@@ -256,7 +256,7 @@ function warmAdminOfflineCache(done) {
     });
 }
 
-var ADMIN_VERSION = 'v88';
+var ADMIN_VERSION = 'v89';
 
 function getDashboardMonth() {
     var sel = document.getElementById('dashboardMonthSelect');
@@ -1285,10 +1285,10 @@ function loadManageItems() {
                 '<div class="modal-content">' +
                     '<span class="modal-close" id="modalClose">&times;</span>' +
                     '<h2 id="modalTitle">' + S.addNewItem + '</h2>' +
-                    '<form id="itemForm">' +
-                        '<div class="form-group"><label>' + S.kurdishName + '</label><input type="text" id="itemNameKu" required></div>' +
-                        '<div class="form-group"><label>' + S.arabicName + '</label><input type="text" id="itemNameAr" required></div>' +
-                        '<div class="form-group"><label>' + S.englishName + '</label><input type="text" id="itemNameEn" required></div>' +
+                    '<form id="itemForm" novalidate>' +
+                        '<div class="form-group"><label>' + S.kurdishName + '</label><input type="text" id="itemNameKu" autocomplete="off"></div>' +
+                        '<div class="form-group"><label>' + S.arabicName + '</label><input type="text" id="itemNameAr" autocomplete="off"></div>' +
+                        '<div class="form-group"><label>' + S.englishName + '</label><input type="text" id="itemNameEn" autocomplete="off"></div>' +
                         '<div class="form-group"><label>' + S.kurdishDesc + '</label><textarea id="itemDescKu" rows="2"></textarea></div>' +
                         '<div class="form-group"><label>' + S.arabicDesc + '</label><textarea id="itemDescAr" rows="2"></textarea></div>' +
                         '<div class="form-group"><label>' + S.englishDesc + '</label><textarea id="itemDescEn" rows="2"></textarea></div>' +
@@ -1296,17 +1296,16 @@ function loadManageItems() {
                             '<input type="file" accept="image/*" id="itemImageFile" style="margin-bottom:6px;">' +
                             '<input type="text" id="itemImageURL" placeholder="' + (S.imageUrlOrUpload || 'Paste image URL or upload above') + '">' +
                             '<img id="itemImagePreview" style="display:none;margin-top:8px;max-height:120px;border-radius:8px;"></div>' +
-                        '<div class="form-group"><label>' + S.price + '</label><input type="number" id="itemPrice" min="0" required></div>' +
+                        '<div class="form-group"><label>' + S.price + '</label><input type="text" inputmode="decimal" id="itemPrice" autocomplete="off"></div>' +
                         '<div class="form-group"><label>' + S.category + '</label>' +
                             '<div style="display:flex;gap:8px;">' +
-                                '<select id="itemCategory" required style="flex:1;">' +
+                                '<select id="itemCategory" style="flex:1;">' +
                                     '<option value="">' + S.select + '</option>' +
                                 '</select>' +
                                 '<button type="button" class="btn-primary" id="addNewCategoryBtn" style="padding:8px 12px;">+</button>' +
-                            '</div>' +
-                        '</div>' +
+                            '</div></div>' +
                         '<div class="form-group"><label><input type="checkbox" id="itemAvailable" checked> ' + S.available + '</label></div>' +
-                        '<button type="submit" class="btn-primary">' + S.saveItem + '</button>' +
+                        '<button type="button" class="btn-primary" id="saveItemBtn">' + S.saveItem + '</button>' +
                         '<button type="button" class="btn-secondary" id="cancelItemBtn" style="margin-left:8px;">' + S.cancel + '</button>' +
                         '<input type="hidden" id="itemId" value="">' +
                     '</form>' +
@@ -1486,22 +1485,34 @@ function loadCategoriesDropdown() {
     var select = document.getElementById('itemCategory');
     if (!select) return Promise.resolve();
 
-    if (!window.db) {
-        refreshItemCategoryDropdown();
-        return Promise.resolve();
-    }
+    refreshItemCategoryDropdown();
 
-    return adminGetWithTimeout(db.collection('categories'), 8000).then(function (snap) {
+    if (!window.db) return Promise.resolve();
+
+    var restPromise = (typeof fetchCategoriesForAdmin === 'function')
+        ? fetchCategoriesForAdmin(12000).then(function (cats) {
+            if (cats && cats.length) {
+                localStorage.setItem('cachedCategories', JSON.stringify(cats));
+                refreshItemCategoryDropdown();
+            }
+        }).catch(function () {})
+        : Promise.resolve();
+
+    var sdkPromise = adminGetWithTimeout(db.collection('categories'), 8000).then(function (snap) {
         var categories = [];
         snap.forEach(function (doc) {
             categories.push({ id: doc.id, data: doc.data() });
         });
-        localStorage.setItem('cachedCategories', JSON.stringify(categories));
-        refreshItemCategoryDropdown();
+        if (categories.length) {
+            localStorage.setItem('cachedCategories', JSON.stringify(categories));
+            refreshItemCategoryDropdown();
+        }
     }).catch(function (e) {
         console.error('Error loading categories:', e);
         refreshItemCategoryDropdown();
     });
+
+    return Promise.all([restPromise, sdkPromise]);
 }
 
 function loadCategoriesFromCache() {
@@ -1770,6 +1781,11 @@ function wireItemEvents() {
             document.getElementById('itemAvailable').checked = true;
             var pr = document.getElementById('itemImagePreview');
             if (pr) pr.style.display = 'none';
+            var saveBtn = document.getElementById('saveItemBtn');
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = S.saveItem;
+            }
             var modal = document.getElementById('itemModal');
             modal.classList.add('active');
             activeItemModal = modal;
@@ -1794,10 +1810,25 @@ function wireItemEvents() {
     }
 
     var form = document.getElementById('itemForm');
+    function triggerSaveItem() {
+        try {
+            saveItem();
+        } catch (err) {
+            console.error('saveItem error:', err);
+            alert(S.itemSyncFailed + (err && err.message ? '\n' + err.message : ''));
+        }
+    }
     if (form) {
         form.addEventListener('submit', function (e) {
             e.preventDefault();
-            saveItem();
+            triggerSaveItem();
+        });
+    }
+    var saveItemBtn = document.getElementById('saveItemBtn');
+    if (saveItemBtn) {
+        saveItemBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            triggerSaveItem();
         });
     }
 
@@ -2053,28 +2084,77 @@ function saveItem() {
          alert(S.itemSyncFailed + '\nFirebase not ready.');
          return;
      }
+
+     var nameKuEl = document.getElementById('itemNameKu');
+     var nameArEl = document.getElementById('itemNameAr');
+     var nameEnEl = document.getElementById('itemNameEn');
+     var priceEl = document.getElementById('itemPrice');
+     var categoryEl = document.getElementById('itemCategory');
+     if (!nameKuEl || !nameArEl || !nameEnEl || !priceEl || !categoryEl) {
+         alert(S.itemSyncFailed);
+         return;
+     }
+
+     var nameKu = nameKuEl.value.trim();
+    var nameAr = nameArEl.value.trim();
+    var nameEn = nameEnEl.value.trim();
+    var price = priceEl.value.trim().replace(',', '.');
+    var category = categoryEl.value;
+
+    if (!nameKu || !nameAr || !nameEn || !price) {
+        alert(S.fillAll);
+        return;
+    }
+    if (!category) {
+        alert(S.selectCategory || (S.fillAll + ' (' + S.category + ')'));
+        categoryEl.focus();
+        return;
+    }
+    if (isNaN(parseFloat(price))) {
+        alert(S.fillAll + ' (' + S.price + ')');
+        priceEl.focus();
+        return;
+    }
+
+    var saveBtn = document.getElementById('saveItemBtn');
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.dataset.prevText = saveBtn.textContent;
+        saveBtn.textContent = '…';
+    }
+
+    var saveTimedOut = false;
+    var readyTimer = setTimeout(function () {
+        saveTimedOut = true;
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = saveBtn.dataset.prevText || S.saveItem;
+        }
+        alert(S.itemSyncFailed + '\n' + (S.connectionSlow || 'Connection slow — try again.'));
+    }, 12000);
+
+    function runSaveWhenAuthed() {
      if (!isAdminAuthenticated()) {
+         clearTimeout(readyTimer);
+         if (saveBtn) {
+             saveBtn.disabled = false;
+             saveBtn.textContent = saveBtn.dataset.prevText || S.saveItem;
+         }
          alert(S.itemSyncFailed + '\nPlease log in again.');
          window.location.href = 'login.html';
          return;
      }
-
-     var nameKu = document.getElementById('itemNameKu').value.trim();
-    var nameAr = document.getElementById('itemNameAr').value.trim();
-    var nameEn = document.getElementById('itemNameEn').value.trim();
-    var price = document.getElementById('itemPrice').value.trim();
-    var category = document.getElementById('itemCategory').value;
-
-    if (!nameKu || !nameAr || !nameEn || !price || !category) {
-        alert(S.fillAll);
-        return;
-    }
 
     var imgUrl = document.getElementById('itemImageURL').value.trim();
     var placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%27400%27 height=%27300%27%3E%3Crect fill=%23e0e0e0 width=%27400%27 height=%27300%27/%3E%3Ctext x=%2750%25%27 y=%2750%25%27 font-size=%2724%27 text-anchor=%27middle%27 dy=%27.3em%27 fill=%23999%27%3ENo+Image%3C/text%3E%3C/svg%3E';
     var finalImg = imgUrl || placeholderImg;
 
     if (finalImg.length > 950000) {
+        clearTimeout(readyTimer);
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = saveBtn.dataset.prevText || S.saveItem;
+        }
         alert(S.itemSyncFailed + '\nImage too large — paste a URL or use a smaller photo.');
         return;
     }
@@ -2113,10 +2193,8 @@ function saveItem() {
         }));
     }
 
-    var saveBtn = document.querySelector('#itemForm button[type="submit"]');
-    if (saveBtn) { saveBtn.disabled = true; saveBtn.dataset.prevText = saveBtn.textContent; saveBtn.textContent = '…'; }
-
     function finishSave(offline) {
+        clearTimeout(readyTimer);
         if (saveBtn) {
             saveBtn.disabled = false;
             saveBtn.textContent = saveBtn.dataset.prevText || S.saveItem;
@@ -2129,6 +2207,7 @@ function saveItem() {
     }
 
     function failSave(err) {
+        clearTimeout(readyTimer);
         if (saveBtn) {
             saveBtn.disabled = false;
             saveBtn.textContent = saveBtn.dataset.prevText || S.saveItem;
@@ -2144,6 +2223,20 @@ function saveItem() {
         plainData: plainData,
         onDone: finishSave,
         onError: failSave
+    });
+    }
+
+    whenAdminReady(function () {
+        if (saveTimedOut) return;
+        clearTimeout(readyTimer);
+        runSaveWhenAuthed();
+    }).catch(function (err) {
+        clearTimeout(readyTimer);
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = saveBtn.dataset.prevText || S.saveItem;
+        }
+        alert(S.itemSyncFailed + (err && err.message ? '\n' + err.message : ''));
     });
 }
 
@@ -2166,6 +2259,11 @@ function editItem(itemId) {
             if (pr) { pr.src = item.image; pr.style.display = 'block'; }
         }
         document.getElementById('modalTitle').textContent = S.editItem;
+        var saveBtn = document.getElementById('saveItemBtn');
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = S.saveItem;
+        }
         var modal = document.getElementById('itemModal');
         modal.classList.add('active');
         activeItemModal = modal;
