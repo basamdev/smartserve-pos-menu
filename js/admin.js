@@ -256,7 +256,7 @@ function warmAdminOfflineCache(done) {
     });
 }
 
-var ADMIN_VERSION = 'v84';
+var ADMIN_VERSION = 'v85';
 
 function getDashboardMonth() {
     var sel = document.getElementById('dashboardMonthSelect');
@@ -269,17 +269,20 @@ function getExpensesMonth() {
 }
 
 function getSalesDataSource() {
-    var cached = readCachedSales();
-    if (_adminSalesLive === null) return cached;
-    if (_adminSalesLive.length === 0 && cached.length > 0) return cached;
-    return _adminSalesLive;
+    if (_adminSalesLive !== null) return _adminSalesLive;
+    return readCachedSales();
 }
 
 function getExpensesDataSource() {
-    var cached = readCachedExpenses();
-    if (_adminExpensesLive === null) return cached;
-    if (_adminExpensesLive.length === 0 && cached.length > 0) return cached;
-    return _adminExpensesLive;
+    if (_adminExpensesLive !== null) return _adminExpensesLive;
+    return readCachedExpenses();
+}
+
+function clearAdminSalesExpensesCache() {
+    _adminSalesLive = [];
+    _adminExpensesLive = [];
+    writeCachedSales([]);
+    writeCachedExpenses([]);
 }
 
 function hydrateAdminFromLocalCache() {
@@ -490,7 +493,12 @@ function startAdminLiveListeners() {
 
     function applySalesSnap(snap) {
         if (snap.empty) {
-            hydrateAdminFromLocalCache();
+            if (isFirestoreCacheEmptySnap(snap)) {
+                hydrateAdminFromLocalCache();
+            } else {
+                _adminSalesLive = [];
+                writeCachedSales([]);
+            }
             refreshAdminCurrentSection();
             return;
         }
@@ -503,7 +511,12 @@ function startAdminLiveListeners() {
 
     function applyExpensesSnap(snap) {
         if (snap.empty) {
-            hydrateAdminFromLocalCache();
+            if (isFirestoreCacheEmptySnap(snap)) {
+                hydrateAdminFromLocalCache();
+            } else {
+                _adminExpensesLive = [];
+                writeCachedExpenses([]);
+            }
             refreshAdminCurrentSection();
             return;
         }
@@ -3358,13 +3371,26 @@ function resetAllData() {
      var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
      if (!confirm(S.resetConfirm)) return;
 
-     // Reset money/income only — keep menu items and categories intact.
+     if (!window.db) {
+         alert(S.resetError + 'Firestore not ready.');
+         return;
+     }
+
+     if (!isAdminAuthenticated()) {
+         alert(S.resetError + (S.loginRequired || 'Please log in again.'));
+         return;
+     }
+
+     // Reset sales + expenses only — keep menu items and categories.
+     clearAdminSalesExpensesCache();
+     refreshAdminCurrentSection();
+
      var collections = ['sales', 'expenses'];
      var promises = [];
 
      collections.forEach(function (col) {
          var p = db.collection(col).get().then(function (snap) {
-             if (snap.empty) return Promise.resolve(0);
+             if (snap.empty) return Promise.resolve();
              var batches = [];
              var batch = db.batch();
              var count = 0;
@@ -3389,10 +3415,13 @@ function resetAllData() {
      });
 
      Promise.all(promises).then(function () {
+         clearAdminSalesExpensesCache();
          alert(S.resetSuccess);
          loadAdminSection('dashboard');
      }).catch(function (e) {
-         alert(S.resetError + (e ? e.message : ''));
+         warmAdminOfflineCache(function () {
+             alert(S.resetError + (e && e.message ? e.message : ''));
+         });
      });
  }
 
