@@ -146,7 +146,7 @@ function warmAdminOfflineCache(done) {
     });
 }
 
-var ADMIN_VERSION = 'v71';
+var ADMIN_VERSION = 'v73';
 
 function adminGetWithTimeout(queryOrRef, ms) {
     ms = ms || 8000;
@@ -822,9 +822,13 @@ function filterItemDocs(docs, searchTerm, cat) {
 }
 
 function startItemsListener() {
-    stopItemsListener();
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     if (!document.getElementById('itemsList')) return;
+
+    if (itemsUnsubscribe) {
+        try { itemsUnsubscribe(); } catch (e) { /* ignore */ }
+        itemsUnsubscribe = null;
+    }
 
     hydrateItemsUiFromCache();
 
@@ -869,6 +873,12 @@ function startItemsListener() {
             clearAdminLoadingEl('itemsList', '<p style="color:#C62828;">' + S.errorPrefix + (S.menuConnectionHint || 'Check connection') + '</p>');
         }
     });
+
+    setTimeout(function () {
+        if (!adminSectionStillLoading('itemsList')) return;
+        if (hydrateItemsUiFromCache()) return;
+        clearAdminLoadingEl('itemsList', '<p>' + S.noItemsFound + '</p>');
+    }, 10000);
 
     itemsUnsubscribe = db.collection('menuItems').onSnapshot(function (snap) {
         applyItemsSnap(snap);
@@ -1126,7 +1136,10 @@ function renderItemsList(items) {
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     var list = document.getElementById('itemsList');
     if (!list) return;
-    if (items.length === 0) { list.innerHTML = '<p>' + S.noItemsFound + '</p>'; return; }
+    if (items.length === 0) {
+        list.innerHTML = '<p>' + S.noItemsFound + '</p>';
+        return;
+    }
 
     var lang = localStorage.getItem('selectedLang') || 'ku';
 
@@ -1159,12 +1172,12 @@ function renderItemsList(items) {
         });
     }
 
-    if (!window.db) {
-        paintRows(buildCategoryMapFromCache());
-        return;
-    }
+    // Paint immediately — do not wait for categories fetch (was causing infinite Loading...).
+    paintRows(buildCategoryMapFromCache());
 
-    db.collection('categories').get().then(function (catSnap) {
+    if (!window.db) return;
+
+    adminGetWithTimeout(db.collection('categories'), 5000).then(function (catSnap) {
         var catMap = {};
         var categories = [];
         catSnap.forEach(function (catDoc) {
