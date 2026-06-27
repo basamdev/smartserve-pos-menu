@@ -4992,14 +4992,23 @@ body.emenu-layout .menu-hero-brand.hero-theme-pulse .menu-hero-logo-ring {
     font-size: 1.35rem;
     color: #fff;
     text-decoration: none;
-    background: linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045);
     border: 2px solid rgba(255, 255, 255, 0.12);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
     transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
-.cafe-social-btn--whatsapp {
-    background: linear-gradient(135deg, #25d366, #128c7e);
+.cafe-social-btn--instagram {
+    background: linear-gradient(135deg, #833ab4, #fd1d1d, #fcb045);
+}
+
+.cafe-social-btn--tiktok {
+    background: linear-gradient(135deg, #010101, #25f4ee, #fe2c55);
+}
+
+.cafe-social-btn--snapchat {
+    background: #fffc00;
+    color: #000;
+    border-color: rgba(0, 0, 0, 0.08);
 }
 
 .cafe-social-btn:hover {

@@ -266,7 +266,7 @@ function warmAdminOfflineCache(done) {
     });
 }
 
-var ADMIN_VERSION = 'v97';
+var ADMIN_VERSION = 'v99';
 
 function getDashboardMonth() {
     var sel = document.getElementById('dashboardMonthSelect');
@@ -3804,9 +3804,33 @@ function loadSettings() {
               '<div class="form-group"><label>' + S.whatsappPhone + '</label><input type="tel" id="whatsappPhone" value="' + (localStorage.getItem('whatsappPhone') || '9647506454656') + '" placeholder="' + S.phonePlaceholder + '"></div>' +
               '<div class="form-group"><label>Location (maps link)</label><input type="url" id="cafeLocationUrl" value="' + (localStorage.getItem('cafeLocationUrl') || 'https://maps.app.goo.gl/mmi5iv7mnGKxKZoq9?g_st=ic') + '" placeholder="https://maps.google.com/..."></div>' +
               '<div class="form-group"><label>Location label</label><input type="text" id="cafeLocationLabel" value="' + (localStorage.getItem('cafeLocationLabel') || 'بەحرکە-مجەمع') + '"></div>' +
-              '<div class="form-group"><label>Instagram URL</label><input type="url" id="cafeInstagram" value="' + (localStorage.getItem('cafeInstagram') || '') + '" placeholder="https://instagram.com/..."></div>' +
               '<div class="form-group"><label>' + S.currency + '</label><input type="text" value="IQD" readonly></div>' +
-              '<button class="btn-primary" id="saveSettingsBtn">' + S.saveSettings + '</button>' +
+          '</div>' +
+          '<div class="card settings-social-card" style="margin-top:20px;">' +
+              '<div class="settings-section-label"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i> ' + S.socialLinks + '</div>' +
+              '<div class="settings-section-hint">' + S.socialLinksHint + '</div>' +
+              '<div class="settings-social-field">' +
+                  '<span class="settings-social-icon settings-social-icon--instagram" aria-hidden="true"><i class="fa-brands fa-instagram"></i></span>' +
+                  '<div class="settings-social-input-wrap">' +
+                      '<label for="cafeInstagram">' + S.instagramUrl + '</label>' +
+                      '<input type="url" id="cafeInstagram" value="' + (localStorage.getItem('cafeInstagram') || '') + '" placeholder="https://instagram.com/...">' +
+                  '</div>' +
+              '</div>' +
+              '<div class="settings-social-field">' +
+                  '<span class="settings-social-icon settings-social-icon--tiktok" aria-hidden="true"><i class="fa-brands fa-tiktok"></i></span>' +
+                  '<div class="settings-social-input-wrap">' +
+                      '<label for="cafeTiktok">' + S.tiktokUrl + '</label>' +
+                      '<input type="url" id="cafeTiktok" value="' + (localStorage.getItem('cafeTiktok') || '') + '" placeholder="https://tiktok.com/@...">' +
+                  '</div>' +
+              '</div>' +
+              '<div class="settings-social-field">' +
+                  '<span class="settings-social-icon settings-social-icon--snapchat" aria-hidden="true"><i class="fa-brands fa-snapchat"></i></span>' +
+                  '<div class="settings-social-input-wrap">' +
+                      '<label for="cafeSnapchat">' + S.snapchatUrl + '</label>' +
+                      '<input type="url" id="cafeSnapchat" value="' + (localStorage.getItem('cafeSnapchat') || '') + '" placeholder="https://snapchat.com/add/...">' +
+                  '</div>' +
+              '</div>' +
+              '<button class="btn-primary" id="saveSettingsBtn" style="margin-top:8px;">' + S.saveSettings + '</button>' +
           '</div>' +
           '<div class="card" style="margin-top:20px;">' +
               '<div class="settings-section-label">🎨 ' + TL.title + '</div>' +
@@ -3840,11 +3864,15 @@ function loadSettings() {
               var cafeLocationUrl = document.getElementById('cafeLocationUrl').value.trim();
               var cafeLocationLabel = document.getElementById('cafeLocationLabel').value.trim();
               var cafeInstagram = document.getElementById('cafeInstagram').value.trim();
+              var cafeTiktok = document.getElementById('cafeTiktok').value.trim();
+              var cafeSnapchat = document.getElementById('cafeSnapchat').value.trim();
               localStorage.setItem('cafeName', cafeName);
               localStorage.setItem('whatsappPhone', whatsappPhone);
               localStorage.setItem('cafeLocationUrl', cafeLocationUrl);
               localStorage.setItem('cafeLocationLabel', cafeLocationLabel);
               localStorage.setItem('cafeInstagram', cafeInstagram);
+              localStorage.setItem('cafeTiktok', cafeTiktok);
+              localStorage.setItem('cafeSnapchat', cafeSnapchat);
               alert(S.settingsSaved);
           });
       }

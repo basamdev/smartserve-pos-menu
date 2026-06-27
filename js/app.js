@@ -224,6 +224,11 @@ const i18n = {
         cafeHours: 'کاتی کردنەوە',
         cafeHoursValue: 'ڕۆژانە: ٢:٠٠ دوای نیوەڕۆ — ٢:٠٠ بەیانی',
         cafeFollowUs: 'فۆڵۆومان بکەن',
+        socialLinks: 'لینکەکانی سۆشیاڵ میدیا',
+        socialLinksHint: 'لینکی ئینستاگرام، تیکتۆک و سنەپچات — لە بەشی «فۆڵۆومان بکەن» دەردەکەون',
+        instagramUrl: 'ئینستاگرام',
+        tiktokUrl: 'تیکتۆک',
+        snapchatUrl: 'سنەپچات',
         cafeInfoTitle: 'عەلی کافێ',
         linkCopied: 'بەستەر کۆپی کرا!',
         installTitle: 'زیادکردن بۆ سکرینە سەرەکی',
@@ -431,6 +436,11 @@ const i18n = {
         cafeHours: 'ساعات العمل',
         cafeHoursValue: 'يومياً: ٢:٠٠ مساءً — ٢:٠٠ صباحاً',
         cafeFollowUs: 'تابعنا',
+        socialLinks: 'روابط التواصل',
+        socialLinksHint: 'روابط إنستغرام وتيك توك وسناب شات — تظهر في «تابعنا»',
+        instagramUrl: 'إنستغرام',
+        tiktokUrl: 'تيك توك',
+        snapchatUrl: 'سناب شات',
         cafeInfoTitle: 'علي كافيه',
         linkCopied: 'تم نسخ الرابط!',
         installTitle: 'إضافة إلى الشاشة الرئيسية',
@@ -655,6 +665,11 @@ const i18n = {
         cafeHours: 'Opening hours',
         cafeHoursValue: 'Daily: 2:00 PM — 2:00 AM',
         cafeFollowUs: 'Follow us',
+        socialLinks: 'Social media links',
+        socialLinksHint: 'Instagram, TikTok & Snapchat URLs — shown in Follow us',
+        instagramUrl: 'Instagram',
+        tiktokUrl: 'TikTok',
+        snapchatUrl: 'Snapchat',
         cafeInfoTitle: 'Ali Coffee',
         linkCopied: 'Link copied!',
         installTitle: 'Add to Home Screen',
@@ -2355,6 +2370,8 @@ function getCafeInfo() {
         locationUrl: storedUrl || defaultUrl,
         locationLabel: storedLabel || defaultLabel,
         instagram: localStorage.getItem('cafeInstagram') || '',
+        tiktok: localStorage.getItem('cafeTiktok') || '',
+        snapchat: localStorage.getItem('cafeSnapchat') || '',
         openHour: 14,
         closeHour: 2
     };
@@ -2423,15 +2440,27 @@ function updateCafeInfoPanel() {
     }
 
     var instaBtn = document.getElementById('cafeInstagramBtn');
-    if (instaBtn) {
-        instaBtn.href = info.instagram || '#';
-        instaBtn.style.display = info.instagram ? '' : 'none';
+    var tiktokBtn = document.getElementById('cafeTiktokBtn');
+    var snapBtn = document.getElementById('cafeSnapchatBtn');
+    var socialBlock = document.querySelector('.cafe-info-block--social');
+
+    function wireSocialLink(btn, url) {
+        if (!btn) return;
+        if (url) {
+            btn.href = url;
+            btn.style.display = '';
+        } else {
+            btn.href = '#';
+            btn.style.display = 'none';
+        }
     }
 
-    var waBtn = document.getElementById('cafeWhatsappBtn');
-    if (waBtn) {
-        var clean = info.phone.replace(/\D/g, '');
-        waBtn.href = 'https://wa.me/' + clean;
+    wireSocialLink(instaBtn, info.instagram);
+    wireSocialLink(tiktokBtn, info.tiktok);
+    wireSocialLink(snapBtn, info.snapchat);
+
+    if (socialBlock) {
+        socialBlock.style.display = (info.instagram || info.tiktok || info.snapchat) ? '' : 'none';
     }
 }
 
