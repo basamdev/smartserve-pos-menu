@@ -266,7 +266,7 @@ function warmAdminOfflineCache(done) {
     });
 }
 
-var ADMIN_VERSION = 'v93';
+var ADMIN_VERSION = 'v94';
 
 function getDashboardMonth() {
     var sel = document.getElementById('dashboardMonthSelect');
@@ -3080,17 +3080,16 @@ function wireCashierOrderToggle() {
     var toggle = document.getElementById('cashierOrderToggle');
     var panel = document.getElementById('cashierOrderPanel');
     if (!toggle || !panel) return;
+    if (window.innerWidth <= 1024) {
+        panel.classList.remove('collapsed');
+        return;
+    }
     var collapsed = false;
     toggle.addEventListener('click', function () {
         collapsed = !collapsed;
         panel.classList.toggle('collapsed', collapsed);
         toggle.textContent = collapsed ? '▼' : '▲';
     });
-    if (window.innerWidth <= 768) {
-        collapsed = true;
-        panel.classList.add('collapsed');
-        toggle.textContent = '▼';
-    }
 }
 
 function applyCashierItemsSnap(snap) {
