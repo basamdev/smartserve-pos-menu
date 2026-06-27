@@ -1169,10 +1169,10 @@ body.light-mode input[type="datetime-local"] {
    CASHIER
    ======================================== */
 
-/* LEFT = order/buttons panel | RIGHT = categories + items */
+/* Cart (col 1) + products (col 2). RTL: cart appears on the right. */
 .cashier-layout {
     display: grid;
-    grid-template-columns: 290px minmax(0, 1fr);
+    grid-template-columns: minmax(320px, 1.15fr) minmax(0, 0.85fr);
     gap: 16px;
     align-items: start;
     min-width: 0;
@@ -2237,9 +2237,9 @@ body.light-mode .menu-card-badge {
         gap: 12px;
     }
 
-    /* Cashier: keep market-style two columns — cart | products (RTL: cart right) */
+    /* Cashier: cart column wider than products (market POS) */
     .cashier-layout {
-        grid-template-columns: minmax(200px, 26vw) minmax(0, 1fr);
+        grid-template-columns: minmax(260px, 1.15fr) minmax(0, 0.85fr);
         gap: 10px;
         align-items: start;
     }
@@ -2288,10 +2288,16 @@ body.light-mode .menu-card-badge {
         display: none !important;
     }
 
-    /* Mini iPad: slightly wider cart, denser product grid */
+    /* Mini iPad: products in narrower column */
     .cashier-grid {
-        grid-template-columns: repeat(auto-fill, minmax(104px, 1fr));
+        grid-template-columns: repeat(2, minmax(0, 1fr));
         gap: 8px;
+    }
+
+    .cashier-cat-btn {
+        height: 32px;
+        padding: 0 10px;
+        font-size: 0.72rem;
     }
 }
 
@@ -2347,7 +2353,7 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: 1fr;
         gap: 6px;
     }
 
@@ -2359,11 +2365,11 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-cat-btn {
-        height: 34px;
-        padding: 0 12px;
-        font-size: 0.72rem;
-        border-radius: 12px;
-        gap: 6px;
+        height: 30px;
+        padding: 0 8px;
+        font-size: 0.65rem;
+        border-radius: 10px;
+        gap: 4px;
     }
 
     .cashier-cat-btn .cashier-cat-icon {
@@ -2376,8 +2382,8 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-layout {
-        grid-template-columns: minmax(132px, 30vw) minmax(0, 1fr);
-        gap: 6px;
+        grid-template-columns: minmax(0, 1.22fr) minmax(0, 0.78fr);
+        gap: 8px;
         align-items: start;
     }
 
@@ -2398,38 +2404,21 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-item-img-wrap {
-        height: 68px;
-    }
-
-    .cashier-item-noimg {
-        font-size: 1.4rem;
-    }
-
-    .cashier-item-info {
-        padding: 6px 6px 8px;
+        height: 52px;
     }
 
     .cashier-item-name {
-        font-size: 0.68rem;
-        margin-bottom: 2px;
-        line-height: 1.25;
+        font-size: 0.62rem;
     }
 
     .cashier-item-price {
-        font-size: 0.72rem;
-    }
-
-    .cashier-item-price span {
-        font-size: 0.58rem;
+        font-size: 0.66rem;
     }
 
     .cashier-item-add {
-        opacity: 1;
-        width: 32px;
-        height: 32px;
-        top: 4px;
-        right: 4px;
-        font-size: 1.05rem;
+        width: 28px;
+        height: 28px;
+        font-size: 0.95rem;
     }
 
     .cashier-order {
@@ -2458,35 +2447,35 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-order-header {
-        padding: 6px 8px 4px;
+        padding: 10px 12px 8px;
         border-bottom: 1px solid var(--border);
         flex-wrap: wrap;
-        gap: 4px;
+        gap: 6px;
     }
 
     .cashier-order-header h3 {
-        font-size: 0.72rem;
+        font-size: 0.92rem;
         display: flex;
         align-items: center;
-        gap: 4px;
-        line-height: 1.2;
+        gap: 6px;
+        line-height: 1.25;
     }
 
     .cashier-order-count {
         display: inline-flex;
-        width: 18px;
-        height: 18px;
-        font-size: 0.6rem;
+        width: 22px;
+        height: 22px;
+        font-size: 0.68rem;
     }
 
     .cashier-order-header-actions {
-        gap: 4px;
+        gap: 6px;
     }
 
     .btn-clear-order {
-        height: 26px;
-        padding: 0 6px;
-        font-size: 0.62rem;
+        height: 34px;
+        padding: 0 12px;
+        font-size: 0.78rem;
     }
 
     .cashier-order-toggle {
@@ -2494,31 +2483,31 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-order-items {
-        min-height: 40px;
+        min-height: 56px;
         max-height: none;
         flex: 1;
-        padding: 2px 0;
+        padding: 4px 0;
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
     }
 
     .cashier-order-items .cashier-empty {
-        padding: 12px 8px;
-        font-size: 0.65rem;
-        line-height: 1.35;
+        padding: 20px 12px;
+        font-size: 0.82rem;
+        line-height: 1.45;
     }
 
     .cashier-order-item {
-        padding: 6px 8px;
-        gap: 2px 6px;
+        padding: 10px 12px;
+        gap: 4px 8px;
     }
 
     .cashier-order-item-name {
-        font-size: 0.68rem;
+        font-size: 0.82rem;
     }
 
     .cashier-order-item-price {
-        font-size: 0.58rem;
+        font-size: 0.72rem;
     }
 
     .cashier-qty-control {
@@ -2526,54 +2515,54 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-qty-btn {
-        width: 28px;
-        height: 28px;
-        font-size: 1rem;
+        width: 34px;
+        height: 34px;
+        font-size: 1.1rem;
     }
 
     .cashier-qty-val {
-        font-size: 0.78rem;
-        min-width: 16px;
+        font-size: 0.88rem;
+        min-width: 20px;
     }
 
     .cashier-order-item-subtotal {
-        font-size: 0.68rem;
+        font-size: 0.82rem;
     }
 
     .cashier-remove-btn {
-        width: 28px;
-        height: 28px;
-        font-size: 0.75rem;
+        width: 34px;
+        height: 34px;
+        font-size: 0.85rem;
     }
 
     .cashier-order-footer {
-        padding: 6px 8px;
+        padding: 10px 12px;
     }
 
     .cashier-total-row {
-        margin-bottom: 6px;
+        margin-bottom: 10px;
     }
 
     .cashier-total-row span:first-child {
-        font-size: 0.68rem;
+        font-size: 0.88rem;
     }
 
     .cashier-total-amount {
-        font-size: 0.88rem;
+        font-size: 1.2rem;
     }
 
     .cashier-actions {
         flex-direction: column;
-        gap: 5px;
+        gap: 8px;
     }
 
     .btn-pay,
     .btn-print {
         flex: none;
         width: 100%;
-        height: 34px;
-        font-size: 0.68rem;
-        border-radius: 8px;
+        height: 46px;
+        font-size: 0.88rem;
+        border-radius: 10px;
         touch-action: manipulation;
     }
 
@@ -2748,12 +2737,12 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-layout {
-        grid-template-columns: minmax(118px, 28vw) minmax(0, 1fr);
-        gap: 5px;
+        grid-template-columns: minmax(0, 1.28fr) minmax(0, 0.72fr);
+        gap: 6px;
     }
 
     .cashier-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: 1fr;
         gap: 5px;
     }
 
@@ -2806,13 +2795,13 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-order-header h3 {
-        font-size: 0.65rem;
+        font-size: 0.85rem;
     }
 
     .btn-clear-order {
-        height: 24px;
-        padding: 0 5px;
-        font-size: 0.58rem;
+        height: 32px;
+        padding: 0 10px;
+        font-size: 0.72rem;
     }
 
     .cashier-order-toggle {
@@ -2857,14 +2846,14 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-total-amount {
-        font-size: 0.82rem;
+        font-size: 1.05rem;
     }
 
     .btn-pay,
     .btn-print {
-        height: 32px;
-        font-size: 0.62rem;
-        border-radius: 8px;
+        height: 42px;
+        font-size: 0.8rem;
+        border-radius: 9px;
     }
 
     .cashier-products {
