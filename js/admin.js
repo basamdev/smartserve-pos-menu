@@ -266,7 +266,7 @@ function warmAdminOfflineCache(done) {
     });
 }
 
-var ADMIN_VERSION = 'v95';
+var ADMIN_VERSION = 'v96';
 
 function getDashboardMonth() {
     var sel = document.getElementById('dashboardMonthSelect');

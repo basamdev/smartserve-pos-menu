@@ -2237,67 +2237,164 @@ body.light-mode .menu-card-badge {
         gap: 12px;
     }
 
-    /* Cashier: cart column wider than products (market POS) */
+    /* Cashier mobile/tablet: products + categories TOP, order cart BOTTOM */
     .cashier-layout {
-        grid-template-columns: minmax(260px, 1.15fr) minmax(0, 0.85fr);
-        gap: 10px;
-        align-items: start;
+        display: flex;
+        flex-direction: column;
+        height: calc(100dvh - 92px);
+        min-height: 320px;
+        gap: 0;
     }
 
     .cashier-products {
-        order: unset;
-        padding-bottom: 0;
-        min-width: 0;
-        max-height: calc(100dvh - 96px);
+        order: -1;
+        flex: 1 1 auto;
+        min-height: 0;
+        max-height: none;
         overflow-y: auto;
         -webkit-overflow-scrolling: touch;
+        padding-bottom: 8px;
     }
 
     .cashier-categories {
+        position: sticky;
+        top: 0;
+        z-index: 3;
         flex-wrap: nowrap;
         overflow-x: auto;
         overflow-y: hidden;
         -webkit-overflow-scrolling: touch;
         scrollbar-width: none;
         margin-bottom: 10px;
-        padding-bottom: 2px;
+        padding: 4px 0 6px;
+        background: var(--bg-primary, #0d1117);
+    }
+
+    body.light-mode .cashier-categories {
+        background: var(--bg-primary, #f5f5f5);
     }
 
     .cashier-categories::-webkit-scrollbar { display: none; }
 
+    .cashier-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 8px;
+    }
+
+    .cashier-cat-btn {
+        height: 36px;
+        padding: 0 12px;
+        font-size: 0.74rem;
+    }
+
+    .cashier-item-img-wrap {
+        height: 72px;
+    }
+
+    .cashier-item-name {
+        font-size: 0.72rem;
+    }
+
+    .cashier-item-price {
+        font-size: 0.76rem;
+    }
+
+    .cashier-item-add {
+        width: 34px;
+        height: 34px;
+        font-size: 1.05rem;
+    }
+
     .cashier-order {
-        position: sticky;
-        top: max(4px, env(safe-area-inset-top, 0px));
-        max-height: calc(100dvh - 96px);
-        min-height: unset;
+        order: 0;
+        flex: 0 0 auto;
+        width: 100%;
+        position: relative;
+        top: auto;
+        bottom: auto;
+        left: auto;
+        right: auto;
+        z-index: 5;
+        max-height: min(44vh, 360px);
+        min-height: 210px;
         transform: none !important;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.35);
+        border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+        border-bottom: none;
+        box-shadow: 0 -8px 28px rgba(0, 0, 0, 0.45);
+        display: flex;
+        flex-direction: column;
+        padding-bottom: max(8px, env(safe-area-inset-bottom, 0px));
     }
 
     .cashier-order.collapsed,
     .cashier-order:not(.collapsed) {
         transform: none !important;
-        max-height: calc(100dvh - 96px);
+        max-height: min(44vh, 360px);
     }
 
     .cashier-order::before {
-        display: none;
+        display: block;
+        width: 36px;
+        height: 4px;
+        background: var(--border-strong);
+        border-radius: 4px;
+        margin: 8px auto 4px;
+        flex-shrink: 0;
     }
 
     .cashier-order-toggle {
         display: none !important;
     }
 
-    /* Mini iPad: products in narrower column */
-    .cashier-grid {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 8px;
+    .cashier-order-header {
+        padding: 4px 14px 8px;
+        flex-shrink: 0;
     }
 
-    .cashier-cat-btn {
-        height: 32px;
-        padding: 0 10px;
-        font-size: 0.72rem;
+    .cashier-order-header h3 {
+        font-size: 0.95rem;
+    }
+
+    .btn-clear-order {
+        height: 34px;
+        padding: 0 12px;
+        font-size: 0.78rem;
+    }
+
+    .cashier-order-items {
+        flex: 1;
+        min-height: 48px;
+        max-height: 120px;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .cashier-order-items .cashier-empty {
+        padding: 16px 14px;
+        font-size: 0.82rem;
+    }
+
+    .cashier-order-footer {
+        flex-shrink: 0;
+        padding: 10px 14px max(10px, env(safe-area-inset-bottom, 0px));
+        border-top: 1px solid var(--border);
+    }
+
+    .cashier-total-amount {
+        font-size: 1.25rem;
+    }
+
+    .cashier-actions {
+        flex-direction: row;
+        gap: 10px;
+    }
+
+    .btn-pay,
+    .btn-print {
+        flex: 1;
+        width: auto;
+        height: 48px;
+        font-size: 0.9rem;
     }
 }
 
@@ -2353,8 +2450,8 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-grid {
-        grid-template-columns: 1fr;
-        gap: 6px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
     }
 
     .cashier-category-bar {
@@ -2365,9 +2462,9 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-cat-btn {
-        height: 30px;
-        padding: 0 8px;
-        font-size: 0.65rem;
+        height: 34px;
+        padding: 0 10px;
+        font-size: 0.72rem;
         border-radius: 10px;
         gap: 4px;
     }
@@ -2379,12 +2476,6 @@ body.light-mode .menu-card-badge {
 
     .cashier-cat-btn .cashier-cat-label {
         font-size: 0.68rem;
-    }
-
-    .cashier-layout {
-        grid-template-columns: minmax(0, 1.22fr) minmax(0, 0.78fr);
-        gap: 8px;
-        align-items: start;
     }
 
     .cashier-item-card {
@@ -2404,50 +2495,29 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-item-img-wrap {
-        height: 52px;
+        height: 68px;
     }
 
     .cashier-item-name {
-        font-size: 0.62rem;
+        font-size: 0.72rem;
     }
 
     .cashier-item-price {
-        font-size: 0.66rem;
+        font-size: 0.76rem;
     }
 
     .cashier-item-add {
-        width: 28px;
-        height: 28px;
-        font-size: 0.95rem;
+        width: 32px;
+        height: 32px;
+        font-size: 1rem;
     }
 
     .cashier-order {
-        position: sticky;
-        top: max(2px, env(safe-area-inset-top, 0px));
-        bottom: auto;
-        left: auto;
-        right: auto;
-        z-index: 2;
-        border-radius: var(--radius-md);
-        max-height: calc(100dvh - 88px);
-        min-height: unset;
-        transform: none !important;
-        transition: none;
-        box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
-    }
-
-    .cashier-order.collapsed,
-    .cashier-order:not(.collapsed) {
-        transform: none !important;
-        max-height: calc(100dvh - 88px);
-    }
-
-    .cashier-order::before {
-        display: none;
+        max-height: min(46vh, 380px);
     }
 
     .cashier-order-header {
-        padding: 10px 12px 8px;
+        padding: 4px 12px 8px;
         border-bottom: 1px solid var(--border);
         flex-wrap: wrap;
         gap: 6px;
@@ -2483,16 +2553,12 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-order-items {
-        min-height: 56px;
-        max-height: none;
-        flex: 1;
-        padding: 4px 0;
-        overflow-y: auto;
-        -webkit-overflow-scrolling: touch;
+        min-height: 52px;
+        max-height: 130px;
     }
 
     .cashier-order-items .cashier-empty {
-        padding: 20px 12px;
+        padding: 16px 12px;
         font-size: 0.82rem;
         line-height: 1.45;
     }
@@ -2536,7 +2602,7 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-order-footer {
-        padding: 10px 12px;
+        padding: 10px 12px max(10px, env(safe-area-inset-bottom, 0px));
     }
 
     .cashier-total-row {
@@ -2552,23 +2618,18 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-actions {
-        flex-direction: column;
-        gap: 8px;
+        flex-direction: row;
+        gap: 10px;
     }
 
     .btn-pay,
     .btn-print {
-        flex: none;
-        width: 100%;
+        flex: 1;
+        width: auto;
         height: 46px;
         font-size: 0.88rem;
         border-radius: 10px;
         touch-action: manipulation;
-    }
-
-    .cashier-products {
-        padding-bottom: 0;
-        max-height: calc(100dvh - 88px);
     }
 
     .cashier-empty {
@@ -2737,17 +2798,16 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-layout {
-        grid-template-columns: minmax(0, 1.28fr) minmax(0, 0.72fr);
-        gap: 6px;
+        height: calc(100dvh - 78px);
     }
 
     .cashier-grid {
-        grid-template-columns: 1fr;
-        gap: 5px;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
     }
 
     .cashier-item-img-wrap {
-        height: 56px;
+        height: 60px;
     }
 
     .cashier-item-info {
@@ -2755,11 +2815,11 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-item-name {
-        font-size: 0.62rem;
+        font-size: 0.68rem;
     }
 
     .cashier-item-price {
-        font-size: 0.66rem;
+        font-size: 0.72rem;
     }
 
     .cashier-category-bar {
@@ -2786,12 +2846,12 @@ body.light-mode .menu-card-badge {
     }
 
     .cashier-order {
-        max-height: calc(100dvh - 82px);
-        border-radius: var(--radius-md);
+        max-height: min(48vh, 320px);
+        min-height: 190px;
     }
 
     .cashier-order-header {
-        padding: 5px 6px 3px;
+        padding: 4px 10px 6px;
     }
 
     .cashier-order-header h3 {
@@ -2808,57 +2868,56 @@ body.light-mode .menu-card-badge {
         display: none !important;
     }
 
+    .cashier-order-items {
+        max-height: 100px;
+    }
+
     .cashier-order-item {
-        padding: 5px 6px;
+        padding: 8px 10px;
     }
 
     .cashier-order-item-name {
-        font-size: 0.62rem;
+        font-size: 0.78rem;
     }
 
     .cashier-order-item-price {
-        font-size: 0.55rem;
+        font-size: 0.68rem;
     }
 
     .cashier-qty-btn {
-        width: 26px;
-        height: 26px;
-        font-size: 0.95rem;
+        width: 30px;
+        height: 30px;
+        font-size: 1rem;
     }
 
     .cashier-qty-val {
-        font-size: 0.72rem;
-        min-width: 14px;
+        font-size: 0.78rem;
+        min-width: 16px;
     }
 
     .cashier-remove-btn {
-        width: 26px;
-        height: 26px;
-        font-size: 0.72rem;
+        width: 30px;
+        height: 30px;
+        font-size: 0.78rem;
     }
 
     .cashier-order-footer {
-        padding: 5px 6px;
+        padding: 8px 10px max(8px, env(safe-area-inset-bottom, 0px));
     }
 
     .cashier-total-row span:first-child {
-        font-size: 0.62rem;
+        font-size: 0.78rem;
     }
 
     .cashier-total-amount {
-        font-size: 1.05rem;
+        font-size: 1.1rem;
     }
 
     .btn-pay,
     .btn-print {
-        height: 42px;
-        font-size: 0.8rem;
+        height: 44px;
+        font-size: 0.84rem;
         border-radius: 9px;
-    }
-
-    .cashier-products {
-        padding-bottom: 0;
-        max-height: calc(100dvh - 82px);
     }
 
     .form-row {
