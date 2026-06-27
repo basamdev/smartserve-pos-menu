@@ -378,6 +378,38 @@
     color: #000;
 }
 
+.settings-social-icon--cafe {
+    background: linear-gradient(135deg, #6F4E37, #9B6135);
+}
+
+.settings-social-icon--contact {
+    background: linear-gradient(135deg, #128c7e, #25d366);
+    flex-direction: column;
+    gap: 2px;
+    font-size: 0.95rem;
+}
+
+.settings-social-icon--contact .fa-phone {
+    font-size: 0.78rem;
+    opacity: 0.95;
+}
+
+.settings-social-icon--contact .fa-whatsapp {
+    font-size: 1.05rem;
+}
+
+.settings-social-icon--maps {
+    background: linear-gradient(135deg, #4285f4, #34a853);
+}
+
+.settings-social-icon--pin {
+    background: linear-gradient(135deg, #ea4335, #fbbc04);
+}
+
+.settings-contact-card .settings-social-field:last-of-type {
+    margin-bottom: 14px;
+}
+
 .settings-social-input-wrap {
     flex: 1;
     min-width: 0;

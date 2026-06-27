@@ -266,7 +266,7 @@ function warmAdminOfflineCache(done) {
     });
 }
 
-var ADMIN_VERSION = 'v99';
+var ADMIN_VERSION = 'v100';
 
 function getDashboardMonth() {
     var sel = document.getElementById('dashboardMonthSelect');
@@ -3798,13 +3798,40 @@ function loadSettings() {
       }).join('');
 
       adminContent.innerHTML =
-          '<div class="card">' +
+          '<div class="card settings-contact-card">' +
               '<h2>' + S.settings + '</h2>' +
-              '<div class="form-group"><label>' + S.cafeName + '</label><input type="text" id="cafeName" value="' + (localStorage.getItem('cafeName') || S.siteName) + '"></div>' +
-              '<div class="form-group"><label>' + S.whatsappPhone + '</label><input type="tel" id="whatsappPhone" value="' + (localStorage.getItem('whatsappPhone') || '9647506454656') + '" placeholder="' + S.phonePlaceholder + '"></div>' +
-              '<div class="form-group"><label>Location (maps link)</label><input type="url" id="cafeLocationUrl" value="' + (localStorage.getItem('cafeLocationUrl') || 'https://maps.app.goo.gl/mmi5iv7mnGKxKZoq9?g_st=ic') + '" placeholder="https://maps.google.com/..."></div>' +
-              '<div class="form-group"><label>Location label</label><input type="text" id="cafeLocationLabel" value="' + (localStorage.getItem('cafeLocationLabel') || 'بەحرکە-مجەمع') + '"></div>' +
-              '<div class="form-group"><label>' + S.currency + '</label><input type="text" value="IQD" readonly></div>' +
+              '<div class="settings-social-field">' +
+                  '<span class="settings-social-icon settings-social-icon--cafe" aria-hidden="true"><i class="fa-solid fa-mug-hot"></i></span>' +
+                  '<div class="settings-social-input-wrap">' +
+                      '<label for="cafeName">' + S.cafeName + '</label>' +
+                      '<input type="text" id="cafeName" value="' + (localStorage.getItem('cafeName') || S.siteName) + '">' +
+                  '</div>' +
+              '</div>' +
+              '<div class="settings-social-field">' +
+                  '<span class="settings-social-icon settings-social-icon--contact" aria-hidden="true">' +
+                      '<i class="fa-solid fa-phone"></i>' +
+                      '<i class="fa-brands fa-whatsapp"></i>' +
+                  '</span>' +
+                  '<div class="settings-social-input-wrap">' +
+                      '<label for="whatsappPhone">' + S.callWhatsAppNumber + '</label>' +
+                      '<input type="tel" id="whatsappPhone" value="' + (localStorage.getItem('whatsappPhone') || '9647506454656') + '" placeholder="' + S.phonePlaceholder + '">' +
+                  '</div>' +
+              '</div>' +
+              '<div class="settings-social-field">' +
+                  '<span class="settings-social-icon settings-social-icon--maps" aria-hidden="true"><i class="fa-solid fa-map-location-dot"></i></span>' +
+                  '<div class="settings-social-input-wrap">' +
+                      '<label for="cafeLocationUrl">' + S.locationMapsUrl + '</label>' +
+                      '<input type="url" id="cafeLocationUrl" value="' + (localStorage.getItem('cafeLocationUrl') || 'https://maps.app.goo.gl/mmi5iv7mnGKxKZoq9?g_st=ic') + '" placeholder="https://maps.google.com/...">' +
+                  '</div>' +
+              '</div>' +
+              '<div class="settings-social-field">' +
+                  '<span class="settings-social-icon settings-social-icon--pin" aria-hidden="true"><i class="fa-solid fa-location-dot"></i></span>' +
+                  '<div class="settings-social-input-wrap">' +
+                      '<label for="cafeLocationLabel">' + S.locationLabelField + '</label>' +
+                      '<input type="text" id="cafeLocationLabel" value="' + (localStorage.getItem('cafeLocationLabel') || 'بەحرکە-مجەمع') + '">' +
+                  '</div>' +
+              '</div>' +
+              '<div class="form-group" style="margin-top:4px;margin-bottom:0;"><label>' + S.currency + '</label><input type="text" value="IQD" readonly></div>' +
           '</div>' +
           '<div class="card settings-social-card" style="margin-top:20px;">' +
               '<div class="settings-section-label"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i> ' + S.socialLinks + '</div>' +
