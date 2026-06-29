@@ -23,6 +23,7 @@ document.addEventListener('DOMContentLoaded', function () {
         if (document.getElementById('menuGrid')) {
             loadCafeSettingsFromFirestore(function () {
                 updateCafeInfoPanel();
+                subscribeCafeSettingsUpdates();
             });
             loadMenuItems();
             setupLanguageButtons();
@@ -225,6 +226,7 @@ const i18n = {
         cafeClosed: 'ئێستا داخراوە',
         cafeContact: 'پەیوەندی',
         cafeCall: 'پەیوەندی',
+        cafeWhatsapp: 'واتساپ',
         cafeShare: 'هاوبەشکردن',
         cafeLocation: 'شوێن',
         cafeHours: 'کاتی کردنەوە',
@@ -440,6 +442,7 @@ const i18n = {
         cafeClosed: 'مغلق الآن',
         cafeContact: 'تواصل',
         cafeCall: 'اتصال',
+        cafeWhatsapp: 'واتساب',
         cafeShare: 'مشاركة',
         cafeLocation: 'الموقع',
         cafeHours: 'ساعات العمل',
@@ -672,6 +675,7 @@ const i18n = {
         cafeClosed: 'Closed now',
         cafeContact: 'Contact',
         cafeCall: 'Call',
+        cafeWhatsapp: 'WhatsApp',
         cafeShare: 'Share',
         cafeLocation: 'Location',
         cafeHours: 'Opening hours',
@@ -2289,8 +2293,9 @@ function sendWhatsAppOrder() {
     if (cartItems.length === 0) return;
     
     var lang = localStorage.getItem('selectedLang') || 'ku';
-    var cafeName = localStorage.getItem('cafeName') || 'Ali Coffee';
-    var phone = localStorage.getItem('whatsappPhone') || '9647506454656';
+    var cafeInfo = getCafeInfo();
+    var cafeName = cafeInfo.name;
+    var phone = normalizeWhatsAppPhone(cafeInfo.phone);
     
     var nameEl = document.getElementById('customerName');
     var placeEl = document.getElementById('customerPlace');
@@ -2350,9 +2355,8 @@ function sendWhatsAppOrder() {
 
     var message = lines.join('\n');
 
-    var cleanPhone = phone.replace(/\D/g, '');
     var encoded = encodeURIComponent(message);
-    var url = 'https://wa.me/' + cleanPhone + '?text=' + encoded;
+    var url = 'https://wa.me/' + phone + '?text=' + encoded;
 
     window.open(url, '_blank');
 }
@@ -2370,6 +2374,16 @@ var CAFE_SETTING_KEYS = [
     'cafeTiktok',
     'cafeSnapchat'
 ];
+
+function normalizeWhatsAppPhone(phone) {
+    var digits = (phone || '').replace(/\D/g, '');
+    if (!digits) return '9647506454656';
+    if (digits.indexOf('00') === 0) digits = digits.slice(2);
+    if (digits.indexOf('964') === 0) return digits;
+    if (digits.indexOf('0') === 0) return '964' + digits.slice(1);
+    if (digits.length === 10) return '964' + digits;
+    return digits;
+}
 
 function normalizeSocialUrl(url, platform) {
     url = (url || '').trim();
@@ -2398,8 +2412,12 @@ function normalizeSocialUrl(url, platform) {
 function applyCafeSettingsToLocalStorage(data) {
     if (!data || typeof data !== 'object') return;
     CAFE_SETTING_KEYS.forEach(function (key) {
-        if (data[key] != null && String(data[key]).trim() !== '') {
-            localStorage.setItem(key, String(data[key]).trim());
+        if (!Object.prototype.hasOwnProperty.call(data, key)) return;
+        var val = data[key];
+        if (val == null || String(val).trim() === '') {
+            localStorage.removeItem(key);
+        } else {
+            localStorage.setItem(key, String(val).trim());
         }
     });
 }
@@ -2415,6 +2433,8 @@ function getCafeSettingsFromLocalStorage() {
     return data;
 }
 
+var cafeSettingsUnsubscribe = null;
+
 function loadCafeSettingsFromFirestore(callback) {
     if (!window.db) {
         if (callback) callback();
@@ -2429,6 +2449,23 @@ function loadCafeSettingsFromFirestore(callback) {
     }).catch(function (err) {
         console.warn('Could not load cafe settings:', err.message);
         if (callback) callback();
+    });
+}
+
+function subscribeCafeSettingsUpdates() {
+    if (!window.db || !document.getElementById('menuGrid')) return;
+    if (cafeSettingsUnsubscribe) {
+        cafeSettingsUnsubscribe();
+        cafeSettingsUnsubscribe = null;
+    }
+
+    cafeSettingsUnsubscribe = window.db.collection('settings').doc('cafe').onSnapshot(function (doc) {
+        if (doc.exists) {
+            applyCafeSettingsToLocalStorage(doc.data());
+            updateCafeInfoPanel();
+        }
+    }, function (err) {
+        console.warn('Cafe settings listener error:', err.message);
     });
 }
 
@@ -2451,6 +2488,8 @@ function saveCafeSettingsToFirestore(data, callback) {
 
 window.loadCafeSettingsFromFirestore = loadCafeSettingsFromFirestore;
 window.saveCafeSettingsToFirestore = saveCafeSettingsToFirestore;
+window.subscribeCafeSettingsUpdates = subscribeCafeSettingsUpdates;
+window.normalizeWhatsAppPhone = normalizeWhatsAppPhone;
 window.normalizeSocialUrl = normalizeSocialUrl;
 window.applyCafeSettingsToLocalStorage = applyCafeSettingsToLocalStorage;
 
@@ -2471,7 +2510,7 @@ function getCafeInfo() {
 
     return {
         name: localStorage.getItem('cafeName') || 'Ali Coffee',
-        phone: localStorage.getItem('whatsappPhone') || '9647506454656',
+        phone: normalizeWhatsAppPhone(localStorage.getItem('whatsappPhone') || '9647506454656'),
         locationUrl: storedUrl || defaultUrl,
         locationLabel: storedLabel || defaultLabel,
         instagram: localStorage.getItem('cafeInstagram') || '',
@@ -2528,7 +2567,7 @@ function updateCafeInfoPanel() {
     }
 
     var titleEl = document.getElementById('cafeInfoTitle');
-    if (titleEl) titleEl.textContent = strings.cafeInfoTitle;
+    if (titleEl) titleEl.textContent = info.name || strings.cafeInfoTitle;
 
     var hoursEl = document.getElementById('cafeHoursText');
     if (hoursEl) hoursEl.textContent = strings.cafeHoursValue;
@@ -2641,8 +2680,16 @@ function setupCafeInfoPanel() {
     var callBtn = document.getElementById('cafeCallBtn');
     if (callBtn) {
         callBtn.addEventListener('click', function () {
-            var phone = getCafeInfo().phone.replace(/\D/g, '');
+            var phone = normalizeWhatsAppPhone(getCafeInfo().phone);
             window.location.href = 'tel:+' + phone;
+        });
+    }
+
+    var waBtn = document.getElementById('cafeWhatsappBtn');
+    if (waBtn) {
+        waBtn.addEventListener('click', function () {
+            var phone = normalizeWhatsAppPhone(getCafeInfo().phone);
+            window.open('https://wa.me/' + phone, '_blank');
         });
     }
 

@@ -11,6 +11,7 @@ var _itemsSnapDocs = [];
 var _adminSalesLive = null;
 var _adminExpensesLive = null;
 var _adminLiveListenersStarted = false;
+var _adminResetInProgress = false;
 let itemsActiveCategory = 'all';
 
 /* ============ OFFLINE CACHE (localStorage backup for admin) ============ */
@@ -245,20 +246,8 @@ function warmAdminOfflineCache(done) {
         });
         localStorage.setItem('cachedCategories', JSON.stringify(categories));
     }).catch(function () {}));
-    tasks.push(db.collection('expenses').get().then(function (snap) {
-        var expenses = [];
-        snap.forEach(function (d) {
-            expenses.push(expenseEntryFromDoc(d));
-        });
-        writeCachedExpenses(expenses);
-    }).catch(function () {}));
-    tasks.push(db.collection('sales').get().then(function (snap) {
-        var sales = [];
-        snap.forEach(function (d) {
-            sales.push(saleEntryFromDoc(d));
-        });
-        writeCachedSales(sales);
-    }).catch(function () {}));
+    tasks.push(warmExpensesCacheFromServer());
+    tasks.push(warmSalesCacheFromServer());
     Promise.all(tasks).then(function () {
         try { localStorage.setItem('adminCacheWarmedAt', String(Date.now())); } catch (e) {}
         hydrateAdminFromLocalCache();
@@ -289,6 +278,7 @@ function syncExpensesLiveFromCache() {
 }
 
 function mergeServerExpensesIntoCache(snap) {
+    if (_adminResetInProgress) return readCachedExpenses();
     var fromServer = [];
     if (snap && !snap.empty) {
         snap.forEach(function (d) {
@@ -380,6 +370,7 @@ function isExpenseInMonth(item, month, year) {
 }
 
 function mergeServerSalesIntoCache(snap) {
+    if (_adminResetInProgress) return readCachedSales();
     var fromServer = [];
     if (snap && !snap.empty) {
         snap.forEach(function (d) {
@@ -398,6 +389,7 @@ function mergeServerSalesIntoCache(snap) {
 }
 
 function mergeRestExpensesDocs(docs) {
+    if (_adminResetInProgress) return readCachedExpenses();
     var fromServer = restDocsToExpenses(docs || []);
     var serverIds = {};
     fromServer.forEach(function (e) { serverIds[e.id] = true; });
@@ -411,6 +403,7 @@ function mergeRestExpensesDocs(docs) {
 }
 
 function mergeRestSalesDocs(docs) {
+    if (_adminResetInProgress) return readCachedSales();
     var fromServer = restDocsToSales(docs || []);
     var serverIds = {};
     fromServer.forEach(function (s) { serverIds[s.id] = true; });
@@ -517,27 +510,73 @@ function parseRestDocuments(json) {
 }
 
 function fetchAdminCollectionViaRest(collectionName, timeoutMs) {
-    timeoutMs = timeoutMs || 12000;
+    return fetchAllAdminCollectionViaRest(collectionName, timeoutMs);
+}
+
+function fetchAllAdminCollectionViaRest(collectionName, timeoutMs) {
+    timeoutMs = timeoutMs || 15000;
     if (!isAdminAuthenticated()) return Promise.reject(new Error('Not signed in'));
     var cfg = window.firebaseConfig;
     if (!cfg || !cfg.projectId) return Promise.reject(new Error('No config'));
-    return auth.currentUser.getIdToken().then(function (token) {
-        var url = 'https://firestore.googleapis.com/v1/projects/' + encodeURIComponent(cfg.projectId) +
-            '/databases/(default)/documents/' + encodeURIComponent(collectionName);
-        var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
-        var timer = null;
-        var opts = { cache: 'no-store', headers: { Authorization: 'Bearer ' + token } };
-        if (controller) {
-            timer = setTimeout(function () { controller.abort(); }, timeoutMs);
-            opts.signal = controller.signal;
-        }
-        return fetch(url, opts).then(function (r) {
-            if (timer) clearTimeout(timer);
-            if (!r.ok) throw new Error('REST HTTP ' + r.status);
-            return r.json();
-        }).then(parseRestDocuments).catch(function (e) {
-            if (timer) clearTimeout(timer);
-            throw e;
+
+    function fetchPage(pageToken) {
+        return auth.currentUser.getIdToken().then(function (token) {
+            var url = 'https://firestore.googleapis.com/v1/projects/' + encodeURIComponent(cfg.projectId) +
+                '/databases/(default)/documents/' + encodeURIComponent(collectionName);
+            if (pageToken) url += '?pageToken=' + encodeURIComponent(pageToken);
+            var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            var timer = null;
+            var opts = { cache: 'no-store', headers: { Authorization: 'Bearer ' + token } };
+            if (controller) {
+                timer = setTimeout(function () { controller.abort(); }, timeoutMs);
+                opts.signal = controller.signal;
+            }
+            return fetch(url, opts).then(function (r) {
+                if (timer) clearTimeout(timer);
+                if (!r.ok) throw new Error('REST HTTP ' + r.status);
+                return r.json();
+            }).then(function (json) {
+                var docs = parseRestDocuments(json);
+                if (json.nextPageToken) {
+                    return fetchPage(json.nextPageToken).then(function (more) {
+                        return docs.concat(more);
+                    });
+                }
+                return docs;
+            }).catch(function (e) {
+                if (timer) clearTimeout(timer);
+                throw e;
+            });
+        });
+    }
+
+    return fetchPage(null);
+}
+
+function deleteCollectionDocumentsByIds(collectionName, docIds) {
+    if (!docIds || !docIds.length) return Promise.resolve();
+    if (!window.db) return Promise.reject(new Error('Firestore not ready'));
+
+    var promises = [];
+    for (var i = 0; i < docIds.length; i += 500) {
+        var batch = db.batch();
+        var chunk = docIds.slice(i, i + 500);
+        chunk.forEach(function (id) {
+            batch.delete(db.collection(collectionName).doc(id));
+        });
+        promises.push(batch.commit());
+    }
+    return Promise.all(promises);
+}
+
+function deleteAdminCollectionFromServer(collectionName) {
+    return fetchAllAdminCollectionViaRest(collectionName).then(function (docs) {
+        var ids = (docs || []).map(function (d) { return d.id; }).filter(Boolean);
+        if (!ids.length) return { deleted: 0, remaining: 0 };
+        return deleteCollectionDocumentsByIds(collectionName, ids).then(function () {
+            return fetchAllAdminCollectionViaRest(collectionName).then(function (remaining) {
+                return { deleted: ids.length, remaining: (remaining || []).length };
+            });
         });
     });
 }
@@ -698,6 +737,64 @@ function restDocsToExpenses(docs) {
     });
 }
 
+function warmSalesCacheFromServer() {
+    if (_adminResetInProgress) {
+        writeCachedSales([]);
+        return Promise.resolve();
+    }
+    if (isAdminAuthenticated() && navigator.onLine) {
+        return fetchAllAdminCollectionViaRest('sales').then(function (docs) {
+            writeCachedSales(restDocsToSales(docs || []));
+        }).catch(function () {
+            return salesCacheFromSdkServer();
+        });
+    }
+    return salesCacheFromSdkServer();
+}
+
+function salesCacheFromSdkServer() {
+    return db.collection('sales').get({ source: 'server' }).then(function (snap) {
+        var sales = [];
+        snap.forEach(function (d) { sales.push(saleEntryFromDoc(d)); });
+        writeCachedSales(sales);
+    }).catch(function () {
+        return db.collection('sales').get().then(function (snap) {
+            var sales = [];
+            snap.forEach(function (d) { sales.push(saleEntryFromDoc(d)); });
+            writeCachedSales(sales);
+        });
+    });
+}
+
+function warmExpensesCacheFromServer() {
+    if (_adminResetInProgress) {
+        writeCachedExpenses([]);
+        return Promise.resolve();
+    }
+    if (isAdminAuthenticated() && navigator.onLine) {
+        return fetchAllAdminCollectionViaRest('expenses').then(function (docs) {
+            writeCachedExpenses(restDocsToExpenses(docs || []));
+        }).catch(function () {
+            return expensesCacheFromSdkServer();
+        });
+    }
+    return expensesCacheFromSdkServer();
+}
+
+function expensesCacheFromSdkServer() {
+    return db.collection('expenses').get({ source: 'server' }).then(function (snap) {
+        var expenses = [];
+        snap.forEach(function (d) { expenses.push(expenseEntryFromDoc(d)); });
+        writeCachedExpenses(expenses);
+    }).catch(function () {
+        return db.collection('expenses').get().then(function (snap) {
+            var expenses = [];
+            snap.forEach(function (d) { expenses.push(expenseEntryFromDoc(d)); });
+            writeCachedExpenses(expenses);
+        });
+    });
+}
+
 function scheduleAdminRestFallback() {
     setTimeout(function () {
         if (!isAdminAuthenticated()) return;
@@ -752,6 +849,7 @@ function startAdminLiveListeners() {
     }
 
     function applySalesSnap(snap) {
+        if (_adminResetInProgress) return;
         if (snap.empty) {
             if (isFirestoreCacheEmptySnap(snap)) {
                 hydrateAdminFromLocalCache();
@@ -775,6 +873,7 @@ function startAdminLiveListeners() {
     }
 
     function applyExpensesSnap(snap) {
+        if (_adminResetInProgress) return;
         if (snap.empty) {
             if (isFirestoreCacheEmptySnap(snap)) {
                 hydrateAdminFromLocalCache();
@@ -3895,7 +3994,9 @@ function loadSettings() {
       if (saveBtn) {
           saveBtn.addEventListener('click', function () {
               var cafeName = document.getElementById('cafeName').value.trim();
-              var whatsappPhone = document.getElementById('whatsappPhone').value.trim();
+              var whatsappPhone = typeof normalizeWhatsAppPhone === 'function'
+                  ? normalizeWhatsAppPhone(document.getElementById('whatsappPhone').value.trim())
+                  : document.getElementById('whatsappPhone').value.trim();
               var cafeLocationUrl = document.getElementById('cafeLocationUrl').value.trim();
               var cafeLocationLabel = document.getElementById('cafeLocationLabel').value.trim();
               var cafeInstagram = typeof normalizeSocialUrl === 'function'
@@ -3908,13 +4009,26 @@ function loadSettings() {
                   ? normalizeSocialUrl(document.getElementById('cafeSnapchat').value.trim(), 'snapchat')
                   : document.getElementById('cafeSnapchat').value.trim();
 
-              localStorage.setItem('cafeName', cafeName);
-              localStorage.setItem('whatsappPhone', whatsappPhone);
-              localStorage.setItem('cafeLocationUrl', cafeLocationUrl);
-              localStorage.setItem('cafeLocationLabel', cafeLocationLabel);
-              localStorage.setItem('cafeInstagram', cafeInstagram);
-              localStorage.setItem('cafeTiktok', cafeTiktok);
-              localStorage.setItem('cafeSnapchat', cafeSnapchat);
+              function storeSetting(key, value) {
+                  if (value == null || String(value).trim() === '') {
+                      localStorage.removeItem(key);
+                  } else {
+                      localStorage.setItem(key, String(value).trim());
+                  }
+              }
+
+              storeSetting('cafeName', cafeName);
+              storeSetting('whatsappPhone', whatsappPhone);
+              storeSetting('cafeLocationUrl', cafeLocationUrl);
+              storeSetting('cafeLocationLabel', cafeLocationLabel);
+              storeSetting('cafeInstagram', cafeInstagram);
+              storeSetting('cafeTiktok', cafeTiktok);
+              storeSetting('cafeSnapchat', cafeSnapchat);
+
+              document.getElementById('whatsappPhone').value = whatsappPhone;
+              document.getElementById('cafeInstagram').value = cafeInstagram;
+              document.getElementById('cafeTiktok').value = cafeTiktok;
+              document.getElementById('cafeSnapchat').value = cafeSnapchat;
 
               var settingsPayload = {
                   cafeName: cafeName,
@@ -3953,7 +4067,12 @@ function loadSettings() {
               };
               Object.keys(fields).forEach(function (storageKey) {
                   var input = document.getElementById(fields[storageKey]);
-                  if (input) input.value = localStorage.getItem(storageKey) || input.value || '';
+                  if (!input) return;
+                  var value = localStorage.getItem(storageKey) || input.value || '';
+                  if (storageKey === 'whatsappPhone' && typeof normalizeWhatsAppPhone === 'function') {
+                      value = normalizeWhatsAppPhone(value);
+                  }
+                  input.value = value;
               });
           });
       }
@@ -3978,45 +4097,52 @@ function resetAllData() {
          return;
      }
 
+     if (_adminResetInProgress) return;
+
+     var resetBtn = document.getElementById('resetAllDataBtn');
+     var resetBtnLabel = resetBtn ? resetBtn.textContent : '';
+     if (resetBtn) {
+         resetBtn.disabled = true;
+         resetBtn.textContent = S.loading || '...';
+     }
+
+     _adminResetInProgress = true;
+     stopDashboardListeners();
+
      // Reset sales + expenses only — keep menu items and categories.
      clearAdminSalesExpensesCache();
      refreshAdminCurrentSection();
 
      var collections = ['sales', 'expenses'];
-     var promises = [];
-
-     collections.forEach(function (col) {
-         var p = db.collection(col).get().then(function (snap) {
-             if (snap.empty) return Promise.resolve();
-             var batches = [];
-             var batch = db.batch();
-             var count = 0;
-             snap.forEach(function (doc) {
-                 batch.delete(doc.ref);
-                 count++;
-                 if (count === 500) {
-                     batches.push(batch.commit());
-                     batch = db.batch();
-                     count = 0;
-                 }
-             });
-             if (count > 0) {
-                 batches.push(batch.commit());
+     var deleteTasks = collections.map(function (col) {
+         return deleteAdminCollectionFromServer(col).then(function (result) {
+             if (result.remaining > 0) {
+                 throw new Error(col + ': ' + result.remaining + ' documents still on server');
              }
-             return Promise.all(batches);
-         }).catch(function (e) {
-             console.error('Error deleting from ' + col + ':', e);
-             throw e;
+             return result;
          });
-         promises.push(p);
      });
 
-     Promise.all(promises).then(function () {
+     Promise.all(deleteTasks).then(function () {
          clearAdminSalesExpensesCache();
+         try { localStorage.setItem('adminCacheWarmedAt', String(Date.now())); } catch (e) {}
+         _adminResetInProgress = false;
+         if (resetBtn) {
+             resetBtn.disabled = false;
+             resetBtn.textContent = resetBtnLabel;
+         }
          alert(S.resetSuccess);
          loadAdminSection('dashboard');
      }).catch(function (e) {
+         console.error('Reset failed:', e);
+         _adminResetInProgress = false;
+         if (resetBtn) {
+             resetBtn.disabled = false;
+             resetBtn.textContent = resetBtnLabel;
+         }
          warmAdminOfflineCache(function () {
+             startAdminLiveListeners();
+             refreshAdminCurrentSection();
              alert(S.resetError + (e && e.message ? e.message : ''));
          });
      });
