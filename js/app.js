@@ -145,6 +145,9 @@ const i18n = {
         cafeCloseTimePlaceholder: '٢:٠٠ بەیانی',
         timeAm: 'بەیانی',
         timePm: 'دوای نیوەڕۆ',
+        applyTime: 'جێبەجێکردن',
+        saveHours: 'پاشەکەوتکردنی کاتەکان',
+        hoursSaved: 'کاتەکان پاشەکەوت کران!',
         cafeHoursDaily: 'ڕۆژانە',
         callWhatsAppNumber: 'ژمارەی پەیوەندی / واتساپ',
         currency: 'دراو',
@@ -368,6 +371,9 @@ const i18n = {
         cafeCloseTimePlaceholder: '٢:٠٠ صباحاً',
         timeAm: 'صباحاً',
         timePm: 'مساءً',
+        applyTime: 'تطبيق',
+        saveHours: 'حفظ الأوقات',
+        hoursSaved: 'تم حفظ الأوقات!',
         cafeHoursDaily: 'يومياً',
         callWhatsAppNumber: 'رقم الاتصال / واتساب',
         currency: 'العملة',
@@ -591,6 +597,9 @@ const i18n = {
         cafeCloseTimePlaceholder: '2:00 AM',
         timeAm: 'AM',
         timePm: 'PM',
+        applyTime: 'Apply',
+        saveHours: 'Save hours',
+        hoursSaved: 'Hours saved!',
         cafeHoursDaily: 'Daily',
         callWhatsAppNumber: 'Call / WhatsApp number',
         currency: 'Currency',
@@ -2500,6 +2509,29 @@ function formatCafeHoursDisplay(info, lang) {
     return (strings.cafeHoursDaily || 'Daily') + ': ' + open + ' — ' + close;
 }
 
+function parseCafeTimeParts(timeStr, fallback) {
+    fallback = fallback || '14:00';
+    var normalized = normalizeCafeTimeValue(timeStr, fallback);
+    var pieces = normalized.split(':');
+    var hour24 = parseInt(pieces[0], 10);
+    var minute = parseInt(pieces[1], 10);
+    return {
+        normalized: normalized,
+        hour12: hour24 % 12 || 12,
+        minute: minute,
+        isPm: hour24 >= 12
+    };
+}
+
+function buildCafeTimeFromParts(hour12, minute, isPm) {
+    var h = parseInt(hour12, 10);
+    var m = parseInt(minute, 10);
+    if (isNaN(h) || isNaN(m)) return '14:00';
+    h = h % 12;
+    if (isPm) h += 12;
+    return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+}
+
 function normalizeWhatsAppPhone(phone) {
     var digits = (phone || '').replace(/\D/g, '');
     if (!digits) return '9647506454656';
@@ -2618,6 +2650,9 @@ window.normalizeWhatsAppPhone = normalizeWhatsAppPhone;
 window.normalizeSocialUrl = normalizeSocialUrl;
 window.normalizeCafeTimeValue = normalizeCafeTimeValue;
 window.formatCafeTimeForDisplay = formatCafeTimeForDisplay;
+window.parseCafeTimeParts = parseCafeTimeParts;
+window.buildCafeTimeFromParts = buildCafeTimeFromParts;
+window.toLocaleDigits = toLocaleDigits;
 window.applyCafeSettingsToLocalStorage = applyCafeSettingsToLocalStorage;
 
 function getCafeInfo() {

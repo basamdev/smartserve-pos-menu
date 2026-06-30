@@ -3894,6 +3894,212 @@ function applyAdminAccent(accent) {
 }
 window.applyAdminAccent = applyAdminAccent;
 
+function getCafeTimeMinuteOptions(parts, lang) {
+    var opts = [];
+    var seen = {};
+    for (var m = 0; m < 60; m += 5) {
+        var val = String(m).padStart(2, '0');
+        opts.push({
+            value: val,
+            label: typeof toLocaleDigits === 'function' ? toLocaleDigits(val, lang) : val
+        });
+        seen[m] = true;
+    }
+    if (!seen[parts.minute]) {
+        var customVal = String(parts.minute).padStart(2, '0');
+        opts.push({
+            value: customVal,
+            label: typeof toLocaleDigits === 'function' ? toLocaleDigits(customVal, lang) : customVal
+        });
+        opts.sort(function (a, b) { return parseInt(a.value, 10) - parseInt(b.value, 10); });
+    }
+    return opts;
+}
+
+function buildCafeTimePickerMarkup(idPrefix, timeValue, fallback, S, lang) {
+    var parts = typeof parseCafeTimeParts === 'function'
+        ? parseCafeTimeParts(timeValue, fallback)
+        : { normalized: fallback, hour12: 2, minute: 0, isPm: idPrefix === 'cafeOpen' };
+    var digits = function (n) {
+        return typeof toLocaleDigits === 'function' ? toLocaleDigits(String(n), lang) : String(n);
+    };
+    var hourOpts = '';
+    for (var h = 1; h <= 12; h++) {
+        hourOpts += '<option value="' + h + '"' + (h === parts.hour12 ? ' selected' : '') + '>' + digits(h) + '</option>';
+    }
+    var minOpts = '';
+    getCafeTimeMinuteOptions(parts, lang).forEach(function (item) {
+        minOpts += '<option value="' + item.value + '"' + (parseInt(item.value, 10) === parts.minute ? ' selected' : '') + '>' + item.label + '</option>';
+    });
+    var periodOpts =
+        '<option value="am"' + (!parts.isPm ? ' selected' : '') + '>' + (S.timeAm || 'بەیانی') + '</option>' +
+        '<option value="pm"' + (parts.isPm ? ' selected' : '') + '>' + (S.timePm || 'دوای نیوەڕۆ') + '</option>';
+    var display = typeof formatCafeTimeForDisplay === 'function'
+        ? formatCafeTimeForDisplay(parts.normalized, lang)
+        : parts.normalized;
+
+    return '<div class="cafe-time-picker" data-prefix="' + idPrefix + '">' +
+        '<button type="button" class="cafe-time-picker-btn" id="' + idPrefix + 'TimeBtn" aria-expanded="false">' +
+            '<i class="fa-regular fa-clock" aria-hidden="true"></i>' +
+            '<span id="' + idPrefix + 'TimeLabel">' + display + '</span>' +
+        '</button>' +
+        '<div class="cafe-time-picker-panel" id="' + idPrefix + 'TimePanel" hidden>' +
+            '<div class="cafe-time-picker-row">' +
+                '<select class="cafe-time-select" id="' + idPrefix + 'Hour" aria-label="hour">' + hourOpts + '</select>' +
+                '<span class="cafe-time-colon">:</span>' +
+                '<select class="cafe-time-select" id="' + idPrefix + 'Minute" aria-label="minute">' + minOpts + '</select>' +
+                '<select class="cafe-time-select cafe-time-period" id="' + idPrefix + 'Period" aria-label="period">' + periodOpts + '</select>' +
+            '</div>' +
+            '<button type="button" class="btn-secondary cafe-time-apply-btn" id="' + idPrefix + 'TimeApply">' + (S.applyTime || 'Apply') + '</button>' +
+        '</div>' +
+        '<input type="hidden" id="' + idPrefix + 'Time" value="' + parts.normalized + '">' +
+    '</div>';
+}
+
+function readCafeTimePickerValue(prefix) {
+    var hourEl = document.getElementById(prefix + 'Hour');
+    var minEl = document.getElementById(prefix + 'Minute');
+    var periodEl = document.getElementById(prefix + 'Period');
+    if (!hourEl || !minEl || !periodEl || typeof buildCafeTimeFromParts !== 'function') return null;
+    return buildCafeTimeFromParts(hourEl.value, minEl.value, periodEl.value === 'pm');
+}
+
+function updateCafeTimePickerDisplay(prefix, lang) {
+    var hidden = document.getElementById(prefix + 'Time');
+    var label = document.getElementById(prefix + 'TimeLabel');
+    if (!hidden) return;
+    var fallback = prefix === 'cafeOpen' ? '14:00' : '02:00';
+    var normalized = typeof normalizeCafeTimeValue === 'function'
+        ? normalizeCafeTimeValue(hidden.value, fallback)
+        : hidden.value;
+    hidden.value = normalized;
+    if (label && typeof formatCafeTimeForDisplay === 'function') {
+        label.textContent = formatCafeTimeForDisplay(normalized, lang);
+    }
+}
+
+function applyCafeTimePicker(prefix, lang) {
+    var val = readCafeTimePickerValue(prefix);
+    if (!val) return;
+    var hidden = document.getElementById(prefix + 'Time');
+    if (hidden) hidden.value = val;
+    updateCafeTimePickerDisplay(prefix, lang);
+    var panel = document.getElementById(prefix + 'TimePanel');
+    var btn = document.getElementById(prefix + 'TimeBtn');
+    if (panel) panel.hidden = true;
+    if (btn) btn.setAttribute('aria-expanded', 'false');
+}
+
+function syncCafeTimePickerFromStorage(prefix, lang) {
+    var hidden = document.getElementById(prefix + 'Time');
+    if (!hidden || typeof parseCafeTimeParts !== 'function') return;
+    var storageKey = prefix === 'cafeOpen' ? 'cafeOpenTime' : 'cafeCloseTime';
+    var fallback = prefix === 'cafeOpen' ? '14:00' : '02:00';
+    var stored = localStorage.getItem(storageKey) || hidden.value;
+    var parts = parseCafeTimeParts(stored, fallback);
+    hidden.value = parts.normalized;
+
+    var hourEl = document.getElementById(prefix + 'Hour');
+    var minEl = document.getElementById(prefix + 'Minute');
+    var periodEl = document.getElementById(prefix + 'Period');
+    if (hourEl) hourEl.value = String(parts.hour12);
+    if (minEl) {
+        var minuteVal = String(parts.minute).padStart(2, '0');
+        if (!minEl.querySelector('option[value="' + minuteVal + '"]')) {
+            var opt = document.createElement('option');
+            opt.value = minuteVal;
+            opt.textContent = typeof toLocaleDigits === 'function' ? toLocaleDigits(minuteVal, lang) : minuteVal;
+            minEl.appendChild(opt);
+        }
+        minEl.value = minuteVal;
+    }
+    if (periodEl) periodEl.value = parts.isPm ? 'pm' : 'am';
+    updateCafeTimePickerDisplay(prefix, lang);
+}
+
+function setupCafeTimePickers(lang) {
+    ['cafeOpen', 'cafeClose'].forEach(function (prefix) {
+        var btn = document.getElementById(prefix + 'TimeBtn');
+        var panel = document.getElementById(prefix + 'TimePanel');
+        var applyBtn = document.getElementById(prefix + 'TimeApply');
+        if (!btn || !panel) return;
+
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var willOpen = panel.hidden;
+            document.querySelectorAll('.cafe-time-picker-panel').forEach(function (p) { p.hidden = true; });
+            document.querySelectorAll('.cafe-time-picker-btn').forEach(function (b) { b.setAttribute('aria-expanded', 'false'); });
+            panel.hidden = !willOpen;
+            btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        });
+
+        if (applyBtn) {
+            applyBtn.addEventListener('click', function () {
+                applyCafeTimePicker(prefix, lang);
+            });
+        }
+
+        ['Hour', 'Minute', 'Period'].forEach(function (part) {
+            var el = document.getElementById(prefix + part);
+            if (el) {
+                el.addEventListener('change', function () {
+                    applyCafeTimePicker(prefix, lang);
+                });
+            }
+        });
+    });
+
+    if (!window._cafeTimePickerDocClose) {
+        window._cafeTimePickerDocClose = true;
+        document.addEventListener('click', function (e) {
+            if (e.target.closest('.cafe-time-picker')) return;
+            document.querySelectorAll('.cafe-time-picker-panel').forEach(function (p) { p.hidden = true; });
+            document.querySelectorAll('.cafe-time-picker-btn').forEach(function (b) { b.setAttribute('aria-expanded', 'false'); });
+        });
+    }
+
+    var saveHoursBtn = document.getElementById('saveCafeHoursBtn');
+    if (saveHoursBtn && saveHoursBtn.dataset.wired !== '1') {
+        saveHoursBtn.dataset.wired = '1';
+        saveHoursBtn.addEventListener('click', saveCafeHoursOnly);
+    }
+}
+
+function saveCafeHoursOnly() {
+    var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
+    var lang = localStorage.getItem('selectedLang') || 'ku';
+    applyCafeTimePicker('cafeOpen', lang);
+    applyCafeTimePicker('cafeClose', lang);
+
+    var cafeOpenTime = readCafeTimePickerValue('cafeOpen') || '14:00';
+    var cafeCloseTime = readCafeTimePickerValue('cafeClose') || '02:00';
+    if (typeof normalizeCafeTimeValue === 'function') {
+        cafeOpenTime = normalizeCafeTimeValue(cafeOpenTime, '14:00');
+        cafeCloseTime = normalizeCafeTimeValue(cafeCloseTime, '02:00');
+    }
+
+    localStorage.setItem('cafeOpenTime', cafeOpenTime);
+    localStorage.setItem('cafeCloseTime', cafeCloseTime);
+
+    var openHidden = document.getElementById('cafeOpenTime');
+    var closeHidden = document.getElementById('cafeCloseTime');
+    if (openHidden) openHidden.value = cafeOpenTime;
+    if (closeHidden) closeHidden.value = cafeCloseTime;
+    updateCafeTimePickerDisplay('cafeOpen', lang);
+    updateCafeTimePickerDisplay('cafeClose', lang);
+
+    if (typeof saveCafeSettingsToFirestore === 'function') {
+        saveCafeSettingsToFirestore({
+            cafeOpenTime: cafeOpenTime,
+            cafeCloseTime: cafeCloseTime
+        }, function (err) {
+            alert(err ? (S.saveHours + ' (local only)') : S.hoursSaved);
+        });
+    } else {
+        alert(S.hoursSaved);
+    }
+}
+
 function loadSettings() {
      var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
       var adminContent = document.getElementById('adminContent');
@@ -3924,6 +4130,10 @@ function loadSettings() {
                  '<span class="theme-swatch-name">' + (TL[t.id] || t.id) + '</span>' +
                  '</button>';
       }).join('');
+
+      var settingsLang = localStorage.getItem('selectedLang') || 'ku';
+      var openTimeStored = localStorage.getItem('cafeOpenTime') || '14:00';
+      var closeTimeStored = localStorage.getItem('cafeCloseTime') || '02:00';
 
       adminContent.innerHTML =
           '<div class="card settings-contact-card">' +
@@ -3972,13 +4182,14 @@ function loadSettings() {
                   '<span class="settings-social-icon settings-social-icon--hours" aria-hidden="true"><i class="fa-regular fa-clock"></i></span>' +
                   '<div class="settings-social-input-wrap settings-hours-wrap">' +
                       '<div class="settings-hours-input">' +
-                          '<label for="cafeOpenTime">' + S.cafeOpenTimeLabel + '</label>' +
-                          '<input type="text" id="cafeOpenTime" value="' + (typeof formatCafeTimeForDisplay === 'function' ? formatCafeTimeForDisplay((typeof normalizeCafeTimeValue === 'function' ? normalizeCafeTimeValue(localStorage.getItem('cafeOpenTime'), '14:00') : (localStorage.getItem('cafeOpenTime') || '14:00')), (localStorage.getItem('selectedLang') || 'ku')) : (localStorage.getItem('cafeOpenTime') || '2:00 PM')) + '" placeholder="' + (S.cafeOpenTimePlaceholder || '2:00 PM') + '">' +
+                          '<label>' + S.cafeOpenTimeLabel + '</label>' +
+                          buildCafeTimePickerMarkup('cafeOpen', openTimeStored, '14:00', S, settingsLang) +
                       '</div>' +
                       '<div class="settings-hours-input">' +
-                          '<label for="cafeCloseTime">' + S.cafeCloseTimeLabel + '</label>' +
-                          '<input type="text" id="cafeCloseTime" value="' + (typeof formatCafeTimeForDisplay === 'function' ? formatCafeTimeForDisplay((typeof normalizeCafeTimeValue === 'function' ? normalizeCafeTimeValue(localStorage.getItem('cafeCloseTime'), '02:00') : (localStorage.getItem('cafeCloseTime') || '02:00')), (localStorage.getItem('selectedLang') || 'ku')) : (localStorage.getItem('cafeCloseTime') || '2:00 AM')) + '" placeholder="' + (S.cafeCloseTimePlaceholder || '2:00 AM') + '">' +
+                          '<label>' + S.cafeCloseTimeLabel + '</label>' +
+                          buildCafeTimePickerMarkup('cafeClose', closeTimeStored, '02:00', S, settingsLang) +
                       '</div>' +
+                      '<button type="button" class="btn-primary cafe-hours-save-btn" id="saveCafeHoursBtn">' + S.saveHours + '</button>' +
                   '</div>' +
               '</div>' +
           '</div>' +
@@ -4019,6 +4230,8 @@ function loadSettings() {
               '<button class="btn-danger" id="resetAllDataBtn">' + S.resetAllData + '</button>' +
           '</div>';
 
+      setupCafeTimePickers(settingsLang);
+
       var themePicker = document.getElementById('themePicker');
       if (themePicker) {
           themePicker.addEventListener('click', function (e) {
@@ -4050,12 +4263,20 @@ function loadSettings() {
               var cafeSnapchat = typeof normalizeSocialUrl === 'function'
                   ? normalizeSocialUrl(document.getElementById('cafeSnapchat').value.trim(), 'snapchat')
                   : document.getElementById('cafeSnapchat').value.trim();
-              var cafeOpenTime = typeof normalizeCafeTimeValue === 'function'
-                  ? normalizeCafeTimeValue(document.getElementById('cafeOpenTime').value.trim(), '14:00')
-                  : document.getElementById('cafeOpenTime').value.trim();
-              var cafeCloseTime = typeof normalizeCafeTimeValue === 'function'
-                  ? normalizeCafeTimeValue(document.getElementById('cafeCloseTime').value.trim(), '02:00')
-                  : document.getElementById('cafeCloseTime').value.trim();
+              var cafeOpenTime = readCafeTimePickerValue('cafeOpen');
+              if (!cafeOpenTime) {
+                  var openHidden = document.getElementById('cafeOpenTime');
+                  cafeOpenTime = openHidden ? openHidden.value.trim() : '14:00';
+              }
+              var cafeCloseTime = readCafeTimePickerValue('cafeClose');
+              if (!cafeCloseTime) {
+                  var closeHidden = document.getElementById('cafeCloseTime');
+                  cafeCloseTime = closeHidden ? closeHidden.value.trim() : '02:00';
+              }
+              if (typeof normalizeCafeTimeValue === 'function') {
+                  cafeOpenTime = normalizeCafeTimeValue(cafeOpenTime, '14:00');
+                  cafeCloseTime = normalizeCafeTimeValue(cafeCloseTime, '02:00');
+              }
 
               function storeSetting(key, value) {
                   if (value == null || String(value).trim() === '') {
@@ -4080,12 +4301,12 @@ function loadSettings() {
               document.getElementById('cafeTiktok').value = cafeTiktok;
               document.getElementById('cafeSnapchat').value = cafeSnapchat;
               var selectedLang = localStorage.getItem('selectedLang') || 'ku';
-              document.getElementById('cafeOpenTime').value = typeof formatCafeTimeForDisplay === 'function'
-                  ? formatCafeTimeForDisplay(cafeOpenTime, selectedLang)
-                  : cafeOpenTime;
-              document.getElementById('cafeCloseTime').value = typeof formatCafeTimeForDisplay === 'function'
-                  ? formatCafeTimeForDisplay(cafeCloseTime, selectedLang)
-                  : cafeCloseTime;
+              var openHiddenSave = document.getElementById('cafeOpenTime');
+              var closeHiddenSave = document.getElementById('cafeCloseTime');
+              if (openHiddenSave) openHiddenSave.value = cafeOpenTime;
+              if (closeHiddenSave) closeHiddenSave.value = cafeCloseTime;
+              updateCafeTimePickerDisplay('cafeOpen', selectedLang);
+              updateCafeTimePickerDisplay('cafeClose', selectedLang);
 
               var settingsPayload = {
                   cafeName: cafeName,
@@ -4122,9 +4343,7 @@ function loadSettings() {
                   cafeLocationLabel: 'cafeLocationLabel',
                   cafeInstagram: 'cafeInstagram',
                   cafeTiktok: 'cafeTiktok',
-                  cafeSnapchat: 'cafeSnapchat',
-                  cafeOpenTime: 'cafeOpenTime',
-                  cafeCloseTime: 'cafeCloseTime'
+                  cafeSnapchat: 'cafeSnapchat'
               };
               Object.keys(fields).forEach(function (storageKey) {
                   var input = document.getElementById(fields[storageKey]);
@@ -4133,14 +4352,11 @@ function loadSettings() {
                   if (storageKey === 'whatsappPhone' && typeof normalizeWhatsAppPhone === 'function') {
                       value = normalizeWhatsAppPhone(value);
                   }
-                  if ((storageKey === 'cafeOpenTime' || storageKey === 'cafeCloseTime') && typeof normalizeCafeTimeValue === 'function') {
-                      var normalizedTime = normalizeCafeTimeValue(value, storageKey === 'cafeOpenTime' ? '14:00' : '02:00');
-                      value = typeof formatCafeTimeForDisplay === 'function'
-                          ? formatCafeTimeForDisplay(normalizedTime, (localStorage.getItem('selectedLang') || 'ku'))
-                          : normalizedTime;
-                  }
                   input.value = value;
               });
+              var langLoaded = localStorage.getItem('selectedLang') || 'ku';
+              syncCafeTimePickerFromStorage('cafeOpen', langLoaded);
+              syncCafeTimePickerFromStorage('cafeClose', langLoaded);
           });
       }
 
