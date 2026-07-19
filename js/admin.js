@@ -1297,34 +1297,34 @@ function loadDashboard() {
             '</div>' +
         '</div>' +
         '<div class="admin-stats">' +
-            '<div class="stat-card stat-card--income"><h3>Sales</h3><div class="stat-value" id="filteredSales">0 IQD</div></div>' +
-            '<div class="stat-card stat-card--expense"><h3>Expenses</h3><div class="stat-value" id="filteredExpenses">0 IQD</div></div>' +
-            '<div class="stat-card stat-card--net"><h3>Net Profit</h3><div class="stat-value" id="filteredNet">0 IQD</div></div>' +
-            '<div class="stat-card"><h3>Orders</h3><div class="stat-value" id="filteredOrders">0</div></div>' +
+            '<div class="stat-card stat-card--income"><h3>' + S.sales + '</h3><div class="stat-value" id="filteredSales">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--expense"><h3>' + S.expenses + '</h3><div class="stat-value" id="filteredExpenses">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--net"><h3>' + S.netProfit + '</h3><div class="stat-value" id="filteredNet">0 IQD</div></div>' +
+            '<div class="stat-card"><h3>' + S.orders + '</h3><div class="stat-value" id="filteredOrders">0</div></div>' +
         '</div>' +
         '<div class="admin-stats" style="margin-top:16px;">' +
-            '<div class="stat-card stat-card--income"><h3>Today Sales</h3><div class="stat-value" id="todaySales">0 IQD</div></div>' +
-            '<div class="stat-card stat-card--expense"><h3>Today Expenses</h3><div class="stat-value" id="todayExpenses">0 IQD</div></div>' +
-            '<div class="stat-card stat-card--net"><h3>Today Net</h3><div class="stat-value" id="todayNet">0 IQD</div></div>' +
-            '<div class="stat-card"><h3>Today Orders</h3><div class="stat-value" id="todayOrders">0</div></div>' +
+            '<div class="stat-card stat-card--income"><h3>' + S.todaySales + '</h3><div class="stat-value" id="todaySales">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--expense"><h3>' + S.todayExpenses + '</h3><div class="stat-value" id="todayExpenses">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--net"><h3>' + S.todayNet + '</h3><div class="stat-value" id="todayNet">0 IQD</div></div>' +
+            '<div class="stat-card"><h3>' + S.todayOrders + '</h3><div class="stat-value" id="todayOrders">0</div></div>' +
         '</div>' +
         '<div class="admin-stats" style="margin-top:16px;">' +
-            '<div class="stat-card stat-card--income"><h3>Week Sales</h3><div class="stat-value" id="weekSales">0 IQD</div></div>' +
-            '<div class="stat-card stat-card--expense"><h3>Week Expenses</h3><div class="stat-value" id="weekExpenses">0 IQD</div></div>' +
-            '<div class="stat-card stat-card--net"><h3>Week Net</h3><div class="stat-value" id="weekNet">0 IQD</div></div>' +
-            '<div class="stat-card"><h3>Week Orders</h3><div class="stat-value" id="weekOrders">0</div></div>' +
+            '<div class="stat-card stat-card--income"><h3>' + S.weekSales + '</h3><div class="stat-value" id="weekSales">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--expense"><h3>' + S.weekExpenses + '</h3><div class="stat-value" id="weekExpenses">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--net"><h3>' + S.weekNet + '</h3><div class="stat-value" id="weekNet">0 IQD</div></div>' +
+            '<div class="stat-card"><h3>' + S.weekOrders + '</h3><div class="stat-value" id="weekOrders">0</div></div>' +
         '</div>' +
         '<div class="admin-stats" style="margin-top:16px;">' +
-            '<div class="stat-card stat-card--income"><h3>Month Sales</h3><div class="stat-value" id="monthlySales">0 IQD</div></div>' +
-            '<div class="stat-card stat-card--expense"><h3>Month Expenses</h3><div class="stat-value" id="monthlyExpenses">0 IQD</div></div>' +
-            '<div class="stat-card stat-card--net"><h3>Month Net</h3><div class="stat-value" id="monthlyNet">0 IQD</div></div>' +
-            '<div class="stat-card"><h3>Best Selling</h3><div class="stat-value" id="bestSelling">-</div></div>' +
+            '<div class="stat-card stat-card--income"><h3>' + S.monthSales + '</h3><div class="stat-value" id="monthlySales">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--expense"><h3>' + S.monthExpenses + '</h3><div class="stat-value" id="monthlyExpenses">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--net"><h3>' + S.monthNet + '</h3><div class="stat-value" id="monthlyNet">0 IQD</div></div>' +
+            '<div class="stat-card"><h3>' + S.bestSelling + '</h3><div class="stat-value" id="bestSelling">-</div></div>' +
         '</div>' +
         '<div class="admin-stats" style="margin-top:16px;">' +
-            '<div class="stat-card stat-card--income"><h3>Total Sales</h3><div class="stat-value" id="totalSales">0 IQD</div></div>' +
-            '<div class="stat-card stat-card--expense"><h3>Total Expenses</h3><div class="stat-value" id="totalExpenses">0 IQD</div></div>' +
-            '<div class="stat-card stat-card--net"><h3>Total Net</h3><div class="stat-value" id="totalNet">0 IQD</div></div>' +
-            '<div class="stat-card"><h3>Total Orders</h3><div class="stat-value" id="totalOrders">0</div></div>' +
+            '<div class="stat-card stat-card--income"><h3>' + S.totalSales + '</h3><div class="stat-value" id="totalSales">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--expense"><h3>' + S.totalExpenses + '</h3><div class="stat-value" id="totalExpenses">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--net"><h3>' + S.totalNet + '</h3><div class="stat-value" id="totalNet">0 IQD</div></div>' +
+            '<div class="stat-card"><h3>' + S.totalOrders + '</h3><div class="stat-value" id="totalOrders">0</div></div>' +
         '</div>' +
         '<div class="card">' +
             '<h2>' + S.dailySales + ' — <span id="dailySalesMonthLabel"></span></h2>' +
