@@ -1333,6 +1333,13 @@ function loadDashboard() {
         return;
     }
     
+    // Force refresh from server to ensure cross-device sync
+    syncAdminFinancialsFromServer(function() {
+        // After server sync, render dashboard with fresh data
+        renderDashboardUI(currentMonth);
+        renderRecentSalesUI();
+    });
+    
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     var adminContent = document.getElementById('adminContent');
     var now = new Date();
@@ -5074,6 +5081,12 @@ function resetAllData() {
  }
 
  function loadExpenses() {
+     // Force refresh from server to ensure cross-device sync
+     syncAdminFinancialsFromServer(function() {
+         // After server sync, render expenses with fresh data
+         renderExpensesUI(getExpensesMonth());
+     });
+     
      var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
      var adminContent = document.getElementById('adminContent');
      var now = new Date();
