@@ -3587,8 +3587,20 @@ function wireCashierEvents() {
         printBtn.addEventListener('click', function () {
             if (orderItems.length === 0) { alert(S.addFirst); return; }
             var itemsCopy = orderItems.slice();
-            printReceipt(itemsCopy);
-            recordCashierSale(itemsCopy);
+            
+            // Show print dialog first, then save to income
+            var printSuccess = printReceipt(itemsCopy);
+            
+            // Only save to income after print dialog is shown
+            if (printSuccess !== false) {
+                // Small delay to ensure print dialog appears before saving
+                setTimeout(function() {
+                    recordCashierSale(itemsCopy);
+                }, 1000);
+            } else {
+                // If print failed, still save to income
+                recordCashierSale(itemsCopy);
+            }
         });
     }
 }
@@ -5217,7 +5229,12 @@ function resetAllData() {
 
      document.getElementById('expenseModal').classList.remove('active');
      renderExpensesUI(expenseMonth);
-     if (document.getElementById('todaySales')) renderDashboardUI(getDashboardMonth());
+     
+     // Force dashboard refresh with expenses
+     if (document.getElementById('todaySales')) {
+         syncExpensesLiveFromCache();
+         renderDashboardUI(getDashboardMonth());
+     }
 
      if (!window.db) {
          alert(S.expenseSavedOffline || S.expenseSaved);
@@ -5276,7 +5293,12 @@ function resetAllData() {
      var monthSelect = document.getElementById('expensesMonthSelect');
      var month = monthSelect ? parseInt(monthSelect.value, 10) : new Date().getMonth();
      renderExpensesUI(month);
-     if (document.getElementById('todaySales')) renderDashboardUI(getDashboardMonth());
+     
+     // Force dashboard refresh with expenses
+     if (document.getElementById('todaySales')) {
+         syncExpensesLiveFromCache();
+         renderDashboardUI(getDashboardMonth());
+     }
 
      if (!window.db || String(expenseId).indexOf('local-') === 0) {
          alert(S.expenseDeleted);
