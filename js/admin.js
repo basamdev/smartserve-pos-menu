@@ -943,6 +943,59 @@ function isAdminAuthenticated() {
     return !!(window.auth && auth.currentUser);
 }
 
+/* ============ ROLE-BASED AUTHORIZATION ============ */
+
+// User roles: 'admin', 'owner', 'staff', 'cashier'
+// Admin and Owner can access financial dashboard
+// Staff and Cashier can only use cashier section
+
+function getUserRole() {
+    var user = auth.currentUser;
+    if (!user) return null;
+    
+    // Check if role is stored in localStorage (for offline support)
+    var cachedRole = localStorage.getItem('userRole');
+    if (cachedRole) return cachedRole;
+    
+    // Default to admin for existing users (backward compatibility)
+    // In production, this should be fetched from Firestore or Firebase Custom Claims
+    return 'admin';
+}
+
+function setUserRole(role) {
+    if (['admin', 'owner', 'staff', 'cashier'].indexOf(role) === -1) {
+        console.error('Invalid role:', role);
+        return false;
+    }
+    localStorage.setItem('userRole', role);
+    return true;
+}
+
+function hasDashboardAccess() {
+    var role = getUserRole();
+    return role === 'admin' || role === 'owner';
+}
+
+function canAccessSection(section) {
+    var role = getUserRole();
+    
+    // Staff and Cashier can only access cashier section
+    if (role === 'staff' || role === 'cashier') {
+        return section === 'cashier';
+    }
+    
+    // Admin and Owner can access all sections
+    return true;
+}
+
+function restrictDashboardAccess() {
+    if (!hasDashboardAccess()) {
+        console.warn('User does not have dashboard access');
+        return false;
+    }
+    return true;
+}
+
 var _adminAuthInitialized = false;
 window.adminAuthReady = new Promise(function (resolve) {
     if (!window.auth) {
@@ -1221,6 +1274,13 @@ function loadAdminSection(section) {
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     var adminContent = document.getElementById('adminContent');
     if (!adminContent) return;
+    
+    // Check if user can access this section
+    if (!canAccessSection(section)) {
+        adminContent.innerHTML = '<div class="card"><h2>' + (S.accessDenied || 'Access Denied') + '</h2><p>' + (S.noSectionAccess || 'You do not have permission to access this section.') + '</p></div>';
+        return;
+    }
+    
     adminContent.innerHTML = '<div class="loading">' + S.loading + '</div>';
 
     try {
@@ -1263,6 +1323,16 @@ function getMonthName(monthIndex, strings) {
 }
 
 function loadDashboard() {
+    // Check if user has dashboard access
+    if (!restrictDashboardAccess()) {
+        var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
+        var adminContent = document.getElementById('adminContent');
+        if (adminContent) {
+            adminContent.innerHTML = '<div class="card"><h2>' + (S.accessDenied || 'Access Denied') + '</h2><p>' + (S.noDashboardAccess || 'You do not have permission to view the financial dashboard.') + '</p></div>';
+        }
+        return;
+    }
+    
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     var adminContent = document.getElementById('adminContent');
     var now = new Date();
@@ -4552,6 +4622,23 @@ function loadSettings() {
               '<div class="settings-section-hint">' + TL.hint + '</div>' +
               '<div class="theme-picker" id="themePicker">' + swatchesHtml + '</div>' +
           '</div>' +
+          '<div class="card" style="margin-top:20px;">' +
+              '<div class="settings-section-label">👤 ' + (S.userRole || 'User Role') + '</div>' +
+              '<div class="settings-section-hint">' + (S.userRoleHint || 'Select your role to control access to dashboard and other features') + '</div>' +
+              '<div class="settings-social-field">' +
+                  '<span class="settings-social-icon" aria-hidden="true"><i class="fa-solid fa-user-shield"></i></span>' +
+                  '<div class="settings-social-input-wrap">' +
+                      '<label for="userRoleSelect">' + (S.selectRole || 'Select Role') + '</label>' +
+                      '<select id="userRoleSelect">' +
+                          '<option value="admin"' + (getUserRole() === 'admin' ? ' selected' : '') + '>' + (S.roleAdmin || 'Admin') + '</option>' +
+                          '<option value="owner"' + (getUserRole() === 'owner' ? ' selected' : '') + '>' + (S.roleOwner || 'Owner') + '</option>' +
+                          '<option value="staff"' + (getUserRole() === 'staff' ? ' selected' : '') + '>' + (S.roleStaff || 'Staff') + '</option>' +
+                          '<option value="cashier"' + (getUserRole() === 'cashier' ? ' selected' : '') + '>' + (S.roleCashier || 'Cashier') + '</option>' +
+                      '</select>' +
+                  '</div>' +
+              '</div>' +
+              '<button class="btn-primary" id="saveRoleBtn" style="margin-top:8px;">' + (S.saveRole || 'Save Role') + '</button>' +
+          '</div>' +
           '<div class="card" style="margin-top:20px;border:1px solid #C62828;">' +
               '<h2 style="color:#C62828;">⚠️ ' + S.resetAllData + '</h2>' +
               '<p style="margin-bottom:12px;color:#666;">' + S.resetConfirm + '</p>' +
@@ -4570,6 +4657,19 @@ function loadSettings() {
               themePicker.querySelectorAll('.theme-swatch').forEach(function (s) {
                   s.classList.toggle('active', s === btn);
               });
+          });
+      }
+
+      var saveRoleBtn = document.getElementById('saveRoleBtn');
+      if (saveRoleBtn) {
+          saveRoleBtn.addEventListener('click', function () {
+              var roleSelect = document.getElementById('userRoleSelect');
+              if (roleSelect) {
+                  var selectedRole = roleSelect.value;
+                  if (setUserRole(selectedRole)) {
+                      alert(S.roleSaved || 'Role saved successfully. Please refresh the page to apply changes.');
+                  }
+              }
           });
       }
 
@@ -5222,7 +5322,9 @@ function resetAllData() {
          price: parseFloat(price) || 0,
          date: date,
          time: time,
-         timestampSeconds: Math.floor(dateTime.getTime() / 1000)
+         timestampSeconds: Math.floor(dateTime.getTime() / 1000),
+         user_id: (window.auth && auth.currentUser) ? auth.currentUser.uid : null,
+         user_email: (window.auth && auth.currentUser) ? auth.currentUser.email : null
      };
      upsertCachedExpense(cacheEntry);
      syncExpensesLiveFromCache();
