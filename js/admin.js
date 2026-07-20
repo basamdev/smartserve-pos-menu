@@ -7,21 +7,1124 @@ let cashierActiveFilter = 'all';
 let categoriesUnsubscribe = null;
 let itemsUnsubscribe = null;
 var dashboardUnsubscribes = [];
-var expensesTodayUnsubscribe = null;
-var expensesMonthUnsubscribe = null;
+var _itemsSnapDocs = [];
+var _adminSalesLive = null;
+var _adminExpensesLive = null;
+var _adminLiveListenersStarted = false;
+var _adminResetInProgress = false;
+let itemsActiveCategory = 'all';
 
-function stopExpensesListener() {
-    if (expensesTodayUnsubscribe) {
-        try { expensesTodayUnsubscribe(); } catch (e) {}
-        expensesTodayUnsubscribe = null;
-    }
-    if (expensesMonthUnsubscribe) {
-        try { expensesMonthUnsubscribe(); } catch (e) {}
-        expensesMonthUnsubscribe = null;
+/* ============ OFFLINE CACHE (localStorage backup for admin) ============ */
+
+function readCachedMenuItemsFlat() {
+    try {
+        return JSON.parse(localStorage.getItem('cachedMenuItems') || '[]');
+    } catch (e) {
+        return [];
     }
 }
-var _itemsSnapDocs = [];
-let itemsActiveCategory = 'all';
+
+function writeCachedMenuItemsFlat(items) {
+    try {
+        localStorage.setItem('cachedMenuItems', JSON.stringify(items));
+        syncCashierCacheFromMenuFlat(items);
+    } catch (e) {
+        console.warn('Could not write menu cache:', e);
+    }
+}
+
+function syncCashierCacheFromMenuFlat(items) {
+    var cashier = [];
+    (items || []).forEach(function (it) {
+        if (!it || !it.id || it.category === 'Water' || it.available === false) return;
+        var v = Object.assign({}, it);
+        delete v.id;
+        cashier.push({ id: it.id, v: v });
+    });
+    try {
+        localStorage.setItem('cachedCashierItems', JSON.stringify(cashier));
+    } catch (e) {}
+}
+
+function serializableFirestoreData(data) {
+    var o = Object.assign({}, data || {});
+    delete o.updated_at;
+    delete o.created_at;
+    return o;
+}
+
+function fakeFirestoreDoc(id, data) {
+    var payload = Object.assign({}, data);
+    return {
+        id: id,
+        exists: true,
+        data: function () { return payload; }
+    };
+}
+
+function getItemDocsFromLocalCache() {
+    return readCachedMenuItemsFlat()
+        .filter(function (it) { return it && it.id && it.category !== 'Water'; })
+        .map(function (it) {
+            var data = Object.assign({}, it);
+            var id = data.id;
+            delete data.id;
+            return fakeFirestoreDoc(id, data);
+        });
+}
+
+function getMenuItemFromLocalCache(itemId) {
+    var items = readCachedMenuItemsFlat();
+    for (var i = 0; i < items.length; i++) {
+        if (items[i].id === itemId) return items[i];
+    }
+    return null;
+}
+
+function upsertCachedMenuItem(id, data) {
+    if (!id) return;
+    var flat = serializableFirestoreData(data);
+    var items = readCachedMenuItemsFlat();
+    var found = false;
+    items = items.map(function (it) {
+        if (it.id === id) {
+            found = true;
+            return Object.assign({ id: id }, flat);
+        }
+        return it;
+    });
+    if (!found) items.push(Object.assign({ id: id }, flat));
+    writeCachedMenuItemsFlat(items);
+    _itemsSnapDocs = getItemDocsFromLocalCache();
+}
+
+function removeCachedMenuItem(id) {
+    if (!id) return;
+    var items = readCachedMenuItemsFlat().filter(function (it) { return it.id !== id; });
+    writeCachedMenuItemsFlat(items);
+    _itemsSnapDocs = getItemDocsFromLocalCache();
+}
+
+/* ============ SALES CACHE (offline dashboard + cashier) ============ */
+
+function readCachedSales() {
+    try {
+        return JSON.parse(localStorage.getItem('cachedSales') || '[]');
+    } catch (e) {
+        return [];
+    }
+}
+
+function writeCachedSales(items) {
+    try {
+        localStorage.setItem('cachedSales', JSON.stringify(items));
+        syncSalesLiveFromCache();
+    } catch (e) {}
+}
+
+function syncSalesLiveFromCache() {
+    _adminSalesLive = readCachedSales().slice();
+}
+
+function saleTimestampToMs(item) {
+    if (!item) return 0;
+    if (item.timestampSeconds != null) return item.timestampSeconds * 1000;
+    var ts = item.timestamp;
+    if (!ts) return 0;
+    if (typeof ts.toDate === 'function') return ts.toDate().getTime();
+    if (ts.seconds != null) return ts.seconds * 1000;
+    if (ts._seconds != null) return ts._seconds * 1000;
+    var parsed = new Date(ts);
+    return isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+}
+
+function saleEntryFromDoc(doc) {
+    var s = doc.data();
+    var ts = s.timestamp;
+    var timestampSeconds = null;
+    if (ts && ts.seconds != null) timestampSeconds = ts.seconds;
+    else if (ts && ts._seconds != null) timestampSeconds = ts._seconds;
+    else if (ts && typeof ts.toDate === 'function') timestampSeconds = Math.floor(ts.toDate().getTime() / 1000);
+    return {
+        id: doc.id,
+        items: s.items || [],
+        total: s.total || 0,
+        timestampSeconds: timestampSeconds,
+        cashier: s.cashier
+    };
+}
+
+function upsertCachedSale(entry) {
+    var items = readCachedSales();
+    var idx = -1;
+    for (var i = 0; i < items.length; i++) {
+        if (items[i].id === entry.id) { idx = i; break; }
+    }
+    if (idx >= 0) items[idx] = entry;
+    else items.push(entry);
+    writeCachedSales(items);
+}
+
+function removeCachedSale(id) {
+    writeCachedSales(readCachedSales().filter(function (s) { return s.id !== id; }));
+}
+
+function mergeSalesSnapIntoCache(snap) {
+    if (!snap || snap.empty) return;
+    var all = readCachedSales();
+    snap.forEach(function (doc) {
+        var entry = saleEntryFromDoc(doc);
+        var found = false;
+        for (var i = 0; i < all.length; i++) {
+            if (all[i].id === entry.id) { all[i] = entry; found = true; break; }
+        }
+        if (!found) all.push(entry);
+    });
+    writeCachedSales(all);
+}
+
+function sumSalesInRange(start, end) {
+    var total = 0;
+    var count = 0;
+    var startMs = start.getTime();
+    var endMs = end.getTime();
+    readCachedSales().forEach(function (s) {
+        var ms = saleTimestampToMs(s);
+        if (ms >= startMs && ms < endMs) {
+            total += s.total || 0;
+            count++;
+        }
+    });
+    return { total: total, count: count };
+}
+
+function sumExpensesInRange(start, end) {
+    var total = 0;
+    var startMs = start.getTime();
+    var endMs = end.getTime();
+    var isSingleDay = endMs - startMs <= 90000000;
+    readCachedExpenses().forEach(function (e) {
+        if (isSingleDay && isExpenseOnLocalDay(e, start)) {
+            total += e.price || 0;
+            return;
+        }
+        var ms = expenseTimestampToMs(e);
+        if (ms >= startMs && ms < endMs) total += e.price || 0;
+    });
+    return total;
+}
+
+function hydrateItemsUiFromCache() {
+    var docs = getItemDocsFromLocalCache();
+    if (!docs.length) return false;
+    _itemsSnapDocs = docs;
+    refreshCategoryFilterOptions();
+    refreshItemCategoryDropdown();
+    var searchEl = document.getElementById('itemSearch');
+    var searchTerm = searchEl ? searchEl.value : '';
+    renderItemsList(filterItemDocs(_itemsSnapDocs, searchTerm, itemsActiveCategory));
+    return true;
+}
+
+function warmAdminOfflineCache(done) {
+    if (!window.db) {
+        if (typeof done === 'function') done();
+        return;
+    }
+    var tasks = [];
+    tasks.push(db.collection('menuItems').get().then(function (snap) {
+        var menu = [];
+        snap.forEach(function (d) {
+            menu.push(Object.assign({ id: d.id }, d.data()));
+        });
+        writeCachedMenuItemsFlat(menu);
+    }).catch(function () {}));
+    tasks.push(db.collection('categories').get().then(function (snap) {
+        var categories = [];
+        snap.forEach(function (d) {
+            categories.push({ id: d.id, data: d.data() });
+        });
+        localStorage.setItem('cachedCategories', JSON.stringify(categories));
+    }).catch(function () {}));
+    tasks.push(warmExpensesCacheFromServer());
+    tasks.push(warmSalesCacheFromServer());
+    Promise.all(tasks).then(function () {
+        try { localStorage.setItem('adminCacheWarmedAt', String(Date.now())); } catch (e) {}
+        hydrateAdminFromLocalCache();
+        if (typeof done === 'function') done();
+    });
+}
+
+var ADMIN_VERSION = 'v101';
+
+function getDashboardMonth() {
+    var sel = document.getElementById('dashboardMonthSelect');
+    return sel ? parseInt(sel.value, 10) : new Date().getMonth();
+}
+
+function getExpensesMonth() {
+    var sel = document.getElementById('expensesMonthSelect');
+    return sel ? parseInt(sel.value, 10) : new Date().getMonth();
+}
+
+function getSalesDataSource() {
+    var cached = readCachedSales();
+    if (_adminSalesLive !== null && _adminSalesLive.length) return _adminSalesLive;
+    return cached;
+}
+
+function syncExpensesLiveFromCache() {
+    _adminExpensesLive = readCachedExpenses().slice();
+}
+
+function mergeServerExpensesIntoCache(snap) {
+    if (_adminResetInProgress) return readCachedExpenses();
+    var fromServer = [];
+    if (snap && !snap.empty) {
+        snap.forEach(function (d) {
+            fromServer.push(expenseEntryFromDoc(d));
+        });
+    }
+    var serverIds = {};
+    fromServer.forEach(function (e) { serverIds[e.id] = true; });
+    var pending = readCachedExpenses().filter(function (e) {
+        return String(e.id).indexOf('local-') === 0 && !serverIds[e.id];
+    });
+    var merged = fromServer.concat(pending).map(normalizeExpenseEntry);
+    _adminExpensesLive = merged;
+    writeCachedExpenses(merged);
+    return merged;
+}
+
+function getExpensesDataSource() {
+    var cached = readCachedExpenses();
+    if (_adminExpensesLive !== null && _adminExpensesLive.length) return _adminExpensesLive;
+    return cached;
+}
+
+function deriveExpenseTimestampSeconds(entry) {
+    if (!entry) return null;
+    if (entry.timestampSeconds != null && !isNaN(entry.timestampSeconds)) {
+        return entry.timestampSeconds;
+    }
+    if (entry.date && entry.time) {
+        var d = new Date(entry.date + 'T' + entry.time);
+        if (!isNaN(d.getTime())) return Math.floor(d.getTime() / 1000);
+    }
+    var ts = entry.timestamp;
+    if (typeof ts === 'string') {
+        var p = new Date(ts);
+        if (!isNaN(p.getTime())) return Math.floor(p.getTime() / 1000);
+    }
+    if (ts && ts.seconds != null) return ts.seconds;
+    if (ts && ts._seconds != null) return ts._seconds;
+    if (ts && typeof ts.toDate === 'function') return Math.floor(ts.toDate().getTime() / 1000);
+    return null;
+}
+
+function normalizeExpenseEntry(entry) {
+    if (!entry) return entry;
+    var sec = deriveExpenseTimestampSeconds(entry);
+    if (sec != null) entry.timestampSeconds = sec;
+    if (!entry.date && entry.timestampSeconds) {
+        entry.date = getLocalDateKey(new Date(entry.timestampSeconds * 1000));
+    }
+    if (!entry.time && entry.timestampSeconds) {
+        var td = new Date(entry.timestampSeconds * 1000);
+        entry.time = pad2Local(td.getHours()) + ':' + pad2Local(td.getMinutes());
+    }
+    return entry;
+}
+
+function pad2Local(n) {
+    return String(n).padStart(2, '0');
+}
+
+function getLocalDateKey(d) {
+    d = d || new Date();
+    return d.getFullYear() + '-' + pad2Local(d.getMonth() + 1) + '-' + pad2Local(d.getDate());
+}
+
+function expenseCalendarDateKey(item) {
+    if (!item) return '';
+    if (item.date) return String(item.date).slice(0, 10);
+    var sec = deriveExpenseTimestampSeconds(item);
+    return sec != null ? getLocalDateKey(new Date(sec * 1000)) : '';
+}
+
+function isExpenseOnLocalDay(item, dayStart) {
+    return expenseCalendarDateKey(item) === getLocalDateKey(dayStart);
+}
+
+function isExpenseInMonth(item, month, year) {
+    year = year == null ? new Date().getFullYear() : year;
+    var key = expenseCalendarDateKey(item);
+    if (key) {
+        var parts = key.split('-');
+        return parseInt(parts[0], 10) === year && parseInt(parts[1], 10) - 1 === month;
+    }
+    var ms = deriveExpenseTimestampSeconds(item);
+    if (ms == null) return false;
+    var d = new Date(ms * 1000);
+    return d.getFullYear() === year && d.getMonth() === month;
+}
+
+function mergeServerSalesIntoCache(snap) {
+    if (_adminResetInProgress) return readCachedSales();
+    var fromServer = [];
+    if (snap && !snap.empty) {
+        snap.forEach(function (d) {
+            fromServer.push(saleEntryFromDoc(d));
+        });
+    }
+    var serverIds = {};
+    fromServer.forEach(function (s) { serverIds[s.id] = true; });
+    var pending = readCachedSales().filter(function (s) {
+        return String(s.id).indexOf('local-') === 0 && !serverIds[s.id];
+    });
+    var merged = fromServer.concat(pending);
+    _adminSalesLive = merged;
+    writeCachedSales(merged);
+    return merged;
+}
+
+function mergeRestExpensesDocs(docs) {
+    if (_adminResetInProgress) return readCachedExpenses();
+    var fromServer = restDocsToExpenses(docs || []);
+    var serverIds = {};
+    fromServer.forEach(function (e) { serverIds[e.id] = true; });
+    var pending = readCachedExpenses().filter(function (e) {
+        return String(e.id).indexOf('local-') === 0 && !serverIds[e.id];
+    });
+    var merged = fromServer.concat(pending).map(normalizeExpenseEntry);
+    _adminExpensesLive = merged;
+    writeCachedExpenses(merged);
+    return merged;
+}
+
+function mergeRestSalesDocs(docs) {
+    if (_adminResetInProgress) return readCachedSales();
+    var fromServer = restDocsToSales(docs || []);
+    var serverIds = {};
+    fromServer.forEach(function (s) { serverIds[s.id] = true; });
+    var pending = readCachedSales().filter(function (s) {
+        return String(s.id).indexOf('local-') === 0 && !serverIds[s.id];
+    });
+    var merged = fromServer.concat(pending);
+    _adminSalesLive = merged;
+    writeCachedSales(merged);
+    return merged;
+}
+
+function clearAdminSalesExpensesCache() {
+    _adminSalesLive = [];
+    _adminExpensesLive = [];
+    writeCachedSales([]);
+    writeCachedExpenses([]);
+}
+
+function hydrateAdminFromLocalCache() {
+    var sales = readCachedSales();
+    var expenses = readCachedExpenses();
+    if (sales.length > 0) _adminSalesLive = sales;
+    if (expenses.length > 0) _adminExpensesLive = expenses;
+}
+
+function isFirestoreCacheEmptySnap(snap) {
+    return !!(snap && snap.empty && snap.metadata && snap.metadata.fromCache);
+}
+
+function fetchPublicCollectionViaRest(collectionName, timeoutMs) {
+    timeoutMs = timeoutMs || 12000;
+    var cfg = window.firebaseConfig;
+    if (!cfg || !cfg.projectId || !cfg.apiKey) {
+        return Promise.reject(new Error('No config'));
+    }
+    var url = 'https://firestore.googleapis.com/v1/projects/' + encodeURIComponent(cfg.projectId) +
+        '/databases/(default)/documents/' + encodeURIComponent(collectionName) +
+        '?key=' + encodeURIComponent(cfg.apiKey);
+    var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    var timer = null;
+    var opts = { cache: 'no-store' };
+    if (controller) {
+        timer = setTimeout(function () { controller.abort(); }, timeoutMs);
+        opts.signal = controller.signal;
+    }
+    return fetch(url, opts).then(function (r) {
+        if (timer) clearTimeout(timer);
+        if (!r.ok) throw new Error('REST HTTP ' + r.status);
+        return r.json();
+    }).then(parseRestDocuments).catch(function (e) {
+        if (timer) clearTimeout(timer);
+        throw e;
+    });
+}
+
+function fetchMenuItemsForAdmin(timeoutMs) {
+    if (typeof fetchMenuViaRest === 'function') {
+        return fetchMenuViaRest(timeoutMs || 12000);
+    }
+    return fetchPublicCollectionViaRest('menuItems', timeoutMs).then(function (docs) {
+        return docs.map(function (d) {
+            return Object.assign({ id: d.id }, d.data || {});
+        });
+    });
+}
+
+function fetchCategoriesForAdmin(timeoutMs) {
+    return fetchPublicCollectionViaRest('categories', timeoutMs).then(function (docs) {
+        return docs.map(function (d) { return { id: d.id, data: d.data || {} }; });
+    });
+}
+
+function restFieldValue(field) {
+    if (!field) return null;
+    if ('stringValue' in field) return field.stringValue;
+    if ('integerValue' in field) return parseInt(field.integerValue, 10);
+    if ('doubleValue' in field) return field.doubleValue;
+    if ('booleanValue' in field) return field.booleanValue;
+    if ('timestampValue' in field) return field.timestampValue;
+    if ('arrayValue' in field) {
+        return (field.arrayValue.values || []).map(restFieldValue);
+    }
+    if ('mapValue' in field) {
+        var o = {};
+        var fields = field.mapValue.fields || {};
+        Object.keys(fields).forEach(function (k) { o[k] = restFieldValue(fields[k]); });
+        return o;
+    }
+    return null;
+}
+
+function parseRestDocuments(json) {
+    var docs = [];
+    (json.documents || []).forEach(function (doc) {
+        var parts = (doc.name || '').split('/');
+        var id = parts[parts.length - 1];
+        var data = {};
+        var fields = doc.fields || {};
+        Object.keys(fields).forEach(function (k) { data[k] = restFieldValue(fields[k]); });
+        docs.push({ id: id, data: data });
+    });
+    return docs;
+}
+
+function fetchAdminCollectionViaRest(collectionName, timeoutMs) {
+    return fetchAllAdminCollectionViaRest(collectionName, timeoutMs);
+}
+
+function fetchAllAdminCollectionViaRest(collectionName, timeoutMs) {
+    timeoutMs = timeoutMs || 15000;
+    if (!isAdminAuthenticated()) return Promise.reject(new Error('Not signed in'));
+    var cfg = window.firebaseConfig;
+    if (!cfg || !cfg.projectId) return Promise.reject(new Error('No config'));
+
+    function fetchPage(pageToken) {
+        return auth.currentUser.getIdToken().then(function (token) {
+            var url = 'https://firestore.googleapis.com/v1/projects/' + encodeURIComponent(cfg.projectId) +
+                '/databases/(default)/documents/' + encodeURIComponent(collectionName);
+            if (pageToken) url += '?pageToken=' + encodeURIComponent(pageToken);
+            var controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+            var timer = null;
+            var opts = { cache: 'no-store', headers: { Authorization: 'Bearer ' + token } };
+            if (controller) {
+                timer = setTimeout(function () { controller.abort(); }, timeoutMs);
+                opts.signal = controller.signal;
+            }
+            return fetch(url, opts).then(function (r) {
+                if (timer) clearTimeout(timer);
+                if (!r.ok) throw new Error('REST HTTP ' + r.status);
+                return r.json();
+            }).then(function (json) {
+                var docs = parseRestDocuments(json);
+                if (json.nextPageToken) {
+                    return fetchPage(json.nextPageToken).then(function (more) {
+                        return docs.concat(more);
+                    });
+                }
+                return docs;
+            }).catch(function (e) {
+                if (timer) clearTimeout(timer);
+                throw e;
+            });
+        });
+    }
+
+    return fetchPage(null);
+}
+
+function deleteCollectionDocumentsByIds(collectionName, docIds) {
+    if (!docIds || !docIds.length) return Promise.resolve();
+    if (!window.db) return Promise.reject(new Error('Firestore not ready'));
+
+    var promises = [];
+    for (var i = 0; i < docIds.length; i += 500) {
+        var batch = db.batch();
+        var chunk = docIds.slice(i, i + 500);
+        chunk.forEach(function (id) {
+            batch.delete(db.collection(collectionName).doc(id));
+        });
+        promises.push(batch.commit());
+    }
+    return Promise.all(promises);
+}
+
+function deleteAdminCollectionFromServer(collectionName) {
+    return fetchAllAdminCollectionViaRest(collectionName).then(function (docs) {
+        var ids = (docs || []).map(function (d) { return d.id; }).filter(Boolean);
+        if (!ids.length) return { deleted: 0, remaining: 0 };
+        return deleteCollectionDocumentsByIds(collectionName, ids).then(function () {
+            return fetchAllAdminCollectionViaRest(collectionName).then(function (remaining) {
+                return { deleted: ids.length, remaining: (remaining || []).length };
+            });
+        });
+    });
+}
+
+function promiseWithTimeout(promise, ms, message) {
+    return Promise.race([
+        promise,
+        new Promise(function (_, reject) {
+            setTimeout(function () { reject(new Error(message || 'timeout')); }, ms);
+        })
+    ]);
+}
+
+function jsToRestFields(obj) {
+    var fields = {};
+    Object.keys(obj || {}).forEach(function (key) {
+        var v = obj[key];
+        if (v === undefined || v === null) return;
+        if (typeof v === 'string') {
+            fields[key] = { stringValue: v };
+        } else if (typeof v === 'boolean') {
+            fields[key] = { booleanValue: v };
+        } else if (typeof v === 'number' && !isNaN(v)) {
+            if (Number.isInteger(v)) fields[key] = { integerValue: String(v) };
+            else fields[key] = { doubleValue: v };
+        }
+    });
+    return fields;
+}
+
+function writeDocumentViaRest(collectionName, docId, plainData, isCreate) {
+    if (!isAdminAuthenticated()) return Promise.reject(new Error('Not signed in'));
+    var cfg = window.firebaseConfig;
+    if (!cfg || !cfg.projectId) return Promise.reject(new Error('No config'));
+    var payload = { fields: jsToRestFields(plainData) };
+    return auth.currentUser.getIdToken().then(function (token) {
+        var base = 'https://firestore.googleapis.com/v1/projects/' + encodeURIComponent(cfg.projectId) +
+            '/databases/(default)/documents/' + encodeURIComponent(collectionName);
+        var url = isCreate
+            ? base + '?documentId=' + encodeURIComponent(docId)
+            : base + '/' + encodeURIComponent(docId);
+        return fetch(url, {
+            method: isCreate ? 'POST' : 'PATCH',
+            cache: 'no-store',
+            headers: {
+                Authorization: 'Bearer ' + token,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        }).then(function (r) {
+            if (!r.ok) {
+                return r.text().then(function (t) {
+                    throw new Error('REST HTTP ' + r.status + (t ? ': ' + t.slice(0, 160) : ''));
+                });
+            }
+            return r.json();
+        });
+    });
+}
+
+function deleteDocumentViaRest(collectionName, docId) {
+    if (!isAdminAuthenticated()) return Promise.reject(new Error('Not signed in'));
+    var cfg = window.firebaseConfig;
+    if (!cfg || !cfg.projectId) return Promise.reject(new Error('No config'));
+    return auth.currentUser.getIdToken().then(function (token) {
+        var url = 'https://firestore.googleapis.com/v1/projects/' + encodeURIComponent(cfg.projectId) +
+            '/databases/(default)/documents/' + encodeURIComponent(collectionName) + '/' +
+            encodeURIComponent(docId);
+        return fetch(url, {
+            method: 'DELETE',
+            cache: 'no-store',
+            headers: { Authorization: 'Bearer ' + token }
+        }).then(function (r) {
+            if (!r.ok && r.status !== 404) {
+                return r.text().then(function (t) {
+                    throw new Error('REST HTTP ' + r.status + (t ? ': ' + t.slice(0, 160) : ''));
+                });
+            }
+            return true;
+        });
+    });
+}
+
+/** Menu writes: SDK first (8s), then Firestore REST — mobile SDK often hangs. */
+function applyMenuCloudWrite(config) {
+    if (!config || !config.onDone) return;
+
+    if (!navigator.onLine) {
+        applyWrite(config.sdkPromise, config.onDone, config.onError, {});
+        return;
+    }
+
+    function restFallback(err) {
+        console.warn('[menu cloud write] SDK failed, REST fallback:', err && (err.message || err));
+        var restPromise;
+        if (config.isDelete) {
+            restPromise = deleteDocumentViaRest(config.collection, config.docId);
+        } else {
+            restPromise = writeDocumentViaRest(
+                config.collection,
+                config.docId,
+                config.plainData,
+                !!config.isCreate
+            );
+        }
+        restPromise.then(function () {
+            config.onDone(false);
+        }).catch(function (e) {
+            if (typeof config.onError === 'function') config.onError(e);
+        });
+    }
+
+    if (!config.sdkPromise || typeof config.sdkPromise.then !== 'function') {
+        restFallback(new Error('No SDK promise'));
+        return;
+    }
+
+    promiseWithTimeout(config.sdkPromise, 8000, 'SDK write timeout').then(function () {
+        config.onDone(false);
+    }).catch(restFallback);
+}
+
+function restDocsToSales(docs) {
+    return docs.map(function (d) {
+        var ts = d.data.timestamp;
+        var timestampSeconds = null;
+        if (typeof ts === 'string') {
+            var parsed = new Date(ts);
+            if (!isNaN(parsed.getTime())) timestampSeconds = Math.floor(parsed.getTime() / 1000);
+        }
+        return {
+            id: d.id,
+            items: d.data.items || [],
+            total: d.data.total || 0,
+            timestampSeconds: timestampSeconds,
+            cashier: d.data.cashier
+        };
+    });
+}
+
+function restDocsToExpenses(docs) {
+    return docs.map(function (d) {
+        var ts = d.data.timestamp;
+        var timestampSeconds = null;
+        if (typeof ts === 'string') {
+            var parsed = new Date(ts);
+            if (!isNaN(parsed.getTime())) timestampSeconds = Math.floor(parsed.getTime() / 1000);
+        }
+        return normalizeExpenseEntry({
+            id: d.id,
+            name: d.data.name,
+            price: d.data.price || 0,
+            date: d.data.date,
+            time: d.data.time,
+            timestamp: ts,
+            timestampSeconds: timestampSeconds
+        });
+    });
+}
+
+function warmSalesCacheFromServer() {
+    if (_adminResetInProgress) {
+        writeCachedSales([]);
+        return Promise.resolve();
+    }
+    if (isAdminAuthenticated() && navigator.onLine) {
+        return fetchAllAdminCollectionViaRest('sales').then(function (docs) {
+            mergeRestSalesDocs(docs || []);
+        }).catch(function () {
+            return salesCacheFromSdkServer();
+        });
+    }
+    return salesCacheFromSdkServer();
+}
+
+function salesCacheFromSdkServer() {
+    return db.collection('sales').get({ source: 'server' }).then(function (snap) {
+        var sales = [];
+        snap.forEach(function (d) { sales.push(saleEntryFromDoc(d)); });
+        writeCachedSales(sales);
+    }).catch(function () {
+        return db.collection('sales').get().then(function (snap) {
+            var sales = [];
+            snap.forEach(function (d) { sales.push(saleEntryFromDoc(d)); });
+            writeCachedSales(sales);
+        });
+    });
+}
+
+function warmExpensesCacheFromServer() {
+    if (_adminResetInProgress) {
+        writeCachedExpenses([]);
+        return Promise.resolve();
+    }
+    if (isAdminAuthenticated() && navigator.onLine) {
+        return fetchAllAdminCollectionViaRest('expenses').then(function (docs) {
+            mergeRestExpensesDocs(docs || []);
+        }).catch(function () {
+            return expensesCacheFromSdkServer();
+        });
+    }
+    return expensesCacheFromSdkServer();
+}
+
+function expensesCacheFromSdkServer() {
+    return db.collection('expenses').get({ source: 'server' }).then(function (snap) {
+        var expenses = [];
+        snap.forEach(function (d) { expenses.push(expenseEntryFromDoc(d)); });
+        writeCachedExpenses(expenses);
+    }).catch(function () {
+        return db.collection('expenses').get().then(function (snap) {
+            var expenses = [];
+            snap.forEach(function (d) { expenses.push(expenseEntryFromDoc(d)); });
+            writeCachedExpenses(expenses);
+        });
+    });
+}
+
+function shouldIgnoreCachedFirestoreSnap(snap) {
+    return !!(navigator.onLine &&
+        isAdminAuthenticated() &&
+        snap &&
+        snap.metadata &&
+        snap.metadata.fromCache &&
+        !snap.metadata.hasPendingWrites);
+}
+
+function syncAdminFinancialsFromServer(callback) {
+    console.log('[sync] Starting financial sync from server');
+    if (!isAdminAuthenticated() || !navigator.onLine) {
+        console.log('[sync] Skipping sync - not authenticated or offline');
+        if (typeof callback === 'function') callback();
+        return Promise.resolve();
+    }
+    
+    // Force fetch from server using SDK to ensure latest data
+    return Promise.all([
+        db.collection('sales').get({ source: 'server' }),
+        db.collection('expenses').get({ source: 'server' })
+    ]).then(function (results) {
+        var salesSnap = results[0];
+        var expensesSnap = results[1];
+        
+        console.log('[sync] Fetched sales:', salesSnap.size, 'expenses:', expensesSnap.size);
+        
+        // Process sales
+        var sales = [];
+        salesSnap.forEach(function (d) { sales.push(saleEntryFromDoc(d)); });
+        writeCachedSales(sales);
+        syncSalesLiveFromCache();
+        
+        // Process expenses
+        var expenses = [];
+        expensesSnap.forEach(function (d) { expenses.push(expenseEntryFromDoc(d)); });
+        writeCachedExpenses(expenses);
+        syncExpensesLiveFromCache();
+        
+        refreshAdminCurrentSection();
+        console.log('[sync] Financial sync complete');
+        if (typeof callback === 'function') callback();
+    }).catch(function (err) {
+        console.warn('[sync] financials:', err && err.message ? err.message : err);
+        // Fallback to cache if server fetch fails
+        syncSalesLiveFromCache();
+        syncExpensesLiveFromCache();
+        if (typeof callback === 'function') callback();
+    });
+}
+
+function scheduleAdminRestFallback() {
+    setTimeout(function () {
+        if (!isAdminAuthenticated()) return;
+        if (_adminSalesLive === null) {
+            fetchAdminCollectionViaRest('sales').then(function (docs) {
+                mergeRestSalesDocs(docs);
+                refreshAdminCurrentSection();
+            }).catch(function (e) {
+                console.warn('[REST] sales fallback:', e.message || e);
+                _adminSalesLive = readCachedSales();
+                refreshAdminCurrentSection();
+            });
+        }
+        if (_adminExpensesLive === null) {
+            fetchAdminCollectionViaRest('expenses').then(function (docs) {
+                mergeRestExpensesDocs(docs);
+                refreshAdminCurrentSection();
+            }).catch(function (e) {
+                console.warn('[REST] expenses fallback:', e.message || e);
+                _adminExpensesLive = readCachedExpenses();
+                refreshAdminCurrentSection();
+            });
+        }
+    }, 4000);
+}
+
+function startAdminLiveListeners() {
+    hydrateAdminFromLocalCache();
+    refreshAdminCurrentSection();
+
+    if (_adminLiveListenersStarted || !window.db) return;
+    if (!isAdminAuthenticated()) {
+        if (!navigator.onLine) _adminLiveListenersStarted = true;
+        return;
+    }
+    _adminLiveListenersStarted = true;
+
+    if (navigator.onLine) {
+        fetchAdminCollectionViaRest('sales').then(function (docs) {
+            mergeRestSalesDocs(docs || []);
+            refreshAdminCurrentSection();
+        }).catch(function (e) { console.warn('[REST] sales:', e.message || e); });
+
+        fetchAdminCollectionViaRest('expenses').then(function (docs) {
+            mergeRestExpensesDocs(docs || []);
+            refreshAdminCurrentSection();
+        }).catch(function (e) { console.warn('[REST] expenses:', e.message || e); });
+    }
+
+    function applySalesSnap(snap) {
+        console.log('[live] Sales snapshot received, docs:', snap.size);
+        if (_adminResetInProgress) return;
+        if (shouldIgnoreCachedFirestoreSnap(snap)) return;
+        if (snap.empty) {
+            if (isFirestoreCacheEmptySnap(snap)) {
+                hydrateAdminFromLocalCache();
+            } else {
+                var cachedSales = readCachedSales();
+                var pendingSales = cachedSales.filter(function (s) { return String(s.id).indexOf('local-') === 0; });
+                if (pendingSales.length) {
+                    _adminSalesLive = pendingSales;
+                    writeCachedSales(pendingSales);
+                } else if (!cachedSales.length) {
+                    _adminSalesLive = [];
+                    writeCachedSales([]);
+                }
+            }
+            refreshAdminCurrentSection();
+            return;
+        }
+        mergeServerSalesIntoCache(snap);
+        console.log('[live] Sales merged, refreshing dashboard');
+        if (document.getElementById('todaySales')) renderDashboardUI(getDashboardMonth());
+        if (document.getElementById('recentSalesContainer')) renderRecentSalesUI();
+    }
+
+    function applyExpensesSnap(snap) {
+        console.log('[live] Expenses snapshot received, docs:', snap.size);
+        if (_adminResetInProgress) return;
+        if (shouldIgnoreCachedFirestoreSnap(snap)) return;
+        if (snap.empty) {
+            if (isFirestoreCacheEmptySnap(snap)) {
+                hydrateAdminFromLocalCache();
+            } else {
+                var cached = readCachedExpenses();
+                var pending = cached.filter(function (e) { return String(e.id).indexOf('local-') === 0; });
+                if (pending.length) {
+                    _adminExpensesLive = pending;
+                    writeCachedExpenses(pending);
+                } else if (!cached.length) {
+                    _adminExpensesLive = [];
+                    writeCachedExpenses([]);
+                }
+            }
+            refreshAdminCurrentSection();
+            return;
+        }
+        mergeServerExpensesIntoCache(snap);
+        console.log('[live] Expenses merged, refreshing dashboard');
+        if (document.getElementById('todaySales')) renderDashboardUI(getDashboardMonth());
+        if (document.getElementById('expensesList')) renderExpensesUI(getExpensesMonth());
+    }
+
+    var salesUnsub = db.collection('sales').onSnapshot(applySalesSnap, function (e) {
+        console.error('[live] sales error:', e);
+        hydrateAdminFromLocalCache();
+        refreshAdminCurrentSection();
+    });
+    dashboardUnsubscribes.push(salesUnsub);
+
+    var expUnsub = db.collection('expenses').onSnapshot(applyExpensesSnap, function (e) {
+        console.error('[live] expenses error:', e);
+        hydrateAdminFromLocalCache();
+        refreshAdminCurrentSection();
+    });
+    dashboardUnsubscribes.push(expUnsub);
+
+    if (navigator.onLine) scheduleAdminRestFallback();
+}
+
+function isAdminAuthenticated() {
+    return !!(window.auth && auth.currentUser);
+}
+
+/* ============ ROLE-BASED AUTHORIZATION ============ */
+
+// User roles: 'admin', 'owner', 'staff', 'cashier'
+// Admin and Owner can access financial dashboard
+// Staff and Cashier can only use cashier section
+
+function getUserRole() {
+    var user = auth.currentUser;
+    if (!user) return null;
+    
+    // Check if role is stored in localStorage (for offline support)
+    var cachedRole = localStorage.getItem('userRole');
+    if (cachedRole && ['admin', 'owner', 'staff', 'cashier'].indexOf(cachedRole) !== -1) {
+        return cachedRole;
+    }
+    
+    // Default to admin for existing users (backward compatibility)
+    // In production, this should be fetched from Firestore or Firebase Custom Claims
+    return 'admin';
+}
+
+function setUserRole(role) {
+    if (['admin', 'owner', 'staff', 'cashier'].indexOf(role) === -1) {
+        console.error('Invalid role:', role);
+        return false;
+    }
+    localStorage.setItem('userRole', role);
+    return true;
+}
+
+function hasDashboardAccess() {
+    var role = getUserRole();
+    return role === 'admin' || role === 'owner';
+}
+
+function canAccessSection(section) {
+    var role = getUserRole();
+    
+    // Staff and Cashier can only access cashier section
+    if (role === 'staff' || role === 'cashier') {
+        return section === 'cashier';
+    }
+    
+    // Admin and Owner can access all sections
+    return true;
+}
+
+function restrictDashboardAccess() {
+    if (!hasDashboardAccess()) {
+        console.warn('User does not have dashboard access');
+        return false;
+    }
+    return true;
+}
+
+var _adminAuthInitialized = false;
+window.adminAuthReady = new Promise(function (resolve) {
+    if (!window.auth) {
+        resolve(null);
+        return;
+    }
+    auth.onAuthStateChanged(function (user) {
+        if (!_adminAuthInitialized) {
+            _adminAuthInitialized = true;
+            resolve(user);
+        }
+        if (user) {
+            syncAdminFinancialsFromServer();
+            warmAdminOfflineCache();
+            startAdminLiveListeners();
+            refreshAdminCurrentSection();
+        } else if (!navigator.onLine) {
+            hydrateAdminFromLocalCache();
+            refreshAdminCurrentSection();
+        } else if (navigator.onLine) {
+            window.location.href = 'login.html';
+        }
+    });
+});
+
+function whenAdminReady(fn) {
+    var dbP = window.dbReady || Promise.resolve(window.db);
+    return Promise.all([dbP, window.adminAuthReady]).then(function (results) {
+        if (typeof fn === 'function') fn(results[1]);
+    });
+}
+
+/** Plain Firestore read for sales/expenses — only after login (rules require auth). */
+function adminProtectedGet(queryOrRef) {
+    if (!isAdminAuthenticated()) {
+        return Promise.reject(new Error('Not signed in'));
+    }
+    return queryOrRef.get();
+}
+
+function adminGetWithTimeout(queryOrRef, ms) {
+    ms = ms || (navigator.onLine ? 25000 : 10000);
+    var cacheSnap = null;
+
+    function raceServer() {
+        return Promise.race([
+            queryOrRef.get(),
+            new Promise(function (_, reject) {
+                setTimeout(function () { reject(new Error('Connection timeout')); }, ms);
+            })
+        ]);
+    }
+
+    return queryOrRef.get({ source: 'cache' }).then(function (snap) {
+        cacheSnap = snap;
+        if (snap && !snap.empty) {
+            raceServer().catch(function () {});
+            return snap;
+        }
+        return raceServer();
+    }).catch(function (err) {
+        if (cacheSnap) return cacheSnap;
+        return queryOrRef.get({ source: 'cache' }).then(function (snap) {
+            if (snap) return snap;
+            throw err;
+        });
+    });
+}
+
+function refreshAdminCurrentSection() {
+    var activeBtn = document.querySelector('.admin-nav-btn.active');
+    if (!activeBtn) return;
+    var section = activeBtn.getAttribute('data-section');
+    if (section === 'dashboard' && document.getElementById('todaySales')) {
+        renderDashboardUI(getDashboardMonth());
+        renderRecentSalesUI();
+    } else if (section === 'expenses' && document.getElementById('expensesList')) {
+        renderExpensesUI(getExpensesMonth());
+    } else if (section === 'items' && document.getElementById('itemsList')) {
+        hydrateItemsUiFromCache();
+        loadItemsList();
+    }
+}
+
+function whenAdminDbReady(fn) {
+    return whenAdminReady(fn);
+}
+
+function clearAdminLoadingEl(elementId, html) {
+    var el = document.getElementById(elementId);
+    if (!el) return;
+    if (el.querySelector('.loading')) {
+        el.innerHTML = html || '';
+    }
+}
+
+function adminSectionStillLoading(elementId) {
+    var el = document.getElementById(elementId);
+    return !!(el && el.querySelector('.loading'));
+}
 
 function stopCategoriesListener() {
     if (categoriesUnsubscribe) {
@@ -49,57 +1152,45 @@ window.populateTestData = populateTestData;
 
 document.addEventListener('DOMContentLoaded', function () {
     setupAdminOfflineDetection();
+    hydrateAdminFromLocalCache();
 
-    const LOGO_HINTS = [
-        'assets/ali-cafe-logo-circular.png',
-        'images/ali-cafe-logo-circular.png',
+    var LOGO_CANDIDATES = [
+        'assets/ali-logo-page.jpg',
+        'assets/logo.svg'
     ];
-    let logoTry = 0;
     window.fallbackLogo = function (img) {
         if (!img || !(img instanceof HTMLImageElement)) return;
-        img.addEventListener('error', function () {
-            img.style.display = 'none';
-            var fallback = document.createElement('div');
+        if (img.dataset.logoFallbackDone === '1') return;
+        var next = parseInt(img.dataset.logoTry || '1', 10);
+        if (next < LOGO_CANDIDATES.length) {
+            img.dataset.logoTry = String(next + 1);
+            img.src = LOGO_CANDIDATES[next] + '?v=83';
+            return;
+        }
+        img.dataset.logoFallbackDone = '1';
+        img.onerror = null;
+        img.style.display = 'none';
+        var wrap = img.closest('.sidebar-brand') || img.parentElement;
+        if (wrap && !wrap.querySelector('.logo-fallback-initials')) {
+            var fallback = document.createElement('span');
             fallback.className = 'logo-fallback-initials';
             fallback.textContent = 'AC';
-            fallback.style.cssText = 'width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-family:serif;font-size:1.25rem;font-weight:700;color:#D4AF37;background:#1a1a1a;flex-shrink:0;';
-            if (img.parentNode) img.parentNode.insertBefore(fallback, img);
-        });
+            fallback.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;width:46px;height:46px;border-radius:50%;background:linear-gradient(135deg,#3B82F6,#1D4ED8);color:#fff;font-weight:800;font-size:1.1rem;font-family:var(--font-body);flex-shrink:0;border:2px solid rgba(59,130,246,0.35);box-shadow:0 2px 12px rgba(59,130,246,0.25);';
+            wrap.insertBefore(fallback, wrap.firstChild);
+        }
     };
-    document.querySelectorAll('img.sidebar-brand-icon, img.logo').forEach(window.fallbackLogo);
 
-    applyAdminAccent(localStorage.getItem('adminAccent') || 'gold');
+    applyAdminAccent(localStorage.getItem('adminAccent') || 'sapphire');
     initAdminPanel();
     wireAdminLangButtons();
     initSidebar();
 
     document.addEventListener('visibilitychange', function () {
         if (document.visibilityState !== 'visible') return;
-        var activeBtn = document.querySelector('.admin-nav-btn.active');
-        if (!activeBtn) return;
-        var section = activeBtn.getAttribute('data-section');
-        if (section === 'dashboard' && document.getElementById('todaySales')) {
-            var sel = document.getElementById('dashboardMonthSelect');
-            var month = sel ? parseInt(sel.value, 10) : new Date().getMonth();
-            loadDashboardStats(month);
-            loadRecentSales();
-        } else if (section === 'items' && document.getElementById('itemsList')) {
-            loadItemsList();
-        } else if (section === 'expenses' && document.getElementById('expensesList')) {
-            var expSel = document.getElementById('expensesMonthSelect');
-            var expMonth = expSel ? parseInt(expSel.value, 10) : new Date().getMonth();
-            loadExpensesStats(expMonth);
-            loadExpensesList(expMonth);
-        }
+        if (!isAdminAuthenticated() || !navigator.onLine) return;
+        syncAdminFinancialsFromServer();
     });
 
-    if (window.auth) {
-        auth.onAuthStateChanged(function (user) {
-            if (!user) {
-                window.location.href = 'login.html';
-            }
-        });
-    }
 });
 
 function wireAdminLangButtons() {
@@ -192,6 +1283,10 @@ function initAdminPanel() {
     var defaultBtn = document.querySelector('.admin-nav-btn.active');
     if (defaultBtn) {
         loadAdminSection(defaultBtn.getAttribute('data-section'));
+        whenAdminReady(function () {
+            startAdminLiveListeners();
+            refreshAdminCurrentSection();
+        });
     }
 }
 
@@ -202,18 +1297,13 @@ function loadAdminSection(section) {
     if (section !== 'categories') {
         stopCategoriesListener();
     }
-    if (section !== 'dashboard') {
-        stopDashboardListeners();
-    }
     if (section !== 'items') {
         stopItemsListener();
-    }
-    if (section !== 'expenses') {
-        stopExpensesListener();
     }
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     var adminContent = document.getElementById('adminContent');
     if (!adminContent) return;
+    
     adminContent.innerHTML = '<div class="loading">' + S.loading + '</div>';
 
     try {
@@ -233,9 +1323,18 @@ function loadAdminSection(section) {
 
 function toDisplayTime(ts) {
     if (!ts) return '\u2014';
-    if (typeof ts.toDate === 'function') return ts.toDate().toLocaleTimeString();
-    if (ts.seconds != null) return new Date(ts.seconds * 1000).toLocaleTimeString();
-    if (ts._seconds != null) return new Date(ts._seconds * 1000).toLocaleTimeString();
+    var lang = localStorage.getItem('selectedLang') || 'ku';
+    var locale = lang === 'ar' ? 'ar-IQ' : (lang === 'ku' ? 'ku-IQ' : 'en-US');
+
+    function format12(dateObj) {
+        if (!dateObj || isNaN(dateObj.getTime())) return '\u2014';
+        return dateObj.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit', second: '2-digit', hour12: true });
+    }
+
+    if (ts instanceof Date) return format12(ts);
+    if (typeof ts.toDate === 'function') return format12(ts.toDate());
+    if (ts.seconds != null) return format12(new Date(ts.seconds * 1000));
+    if (ts._seconds != null) return format12(new Date(ts._seconds * 1000));
     return String(ts);
 }
 
@@ -247,6 +1346,13 @@ function getMonthName(monthIndex, strings) {
 }
 
 function loadDashboard() {
+    // Force refresh from server to ensure cross-device sync
+    syncAdminFinancialsFromServer(function() {
+        // After server sync, render dashboard with fresh data
+        renderDashboardUI(currentMonth);
+        renderRecentSalesUI();
+    });
+    
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     var adminContent = document.getElementById('adminContent');
     var now = new Date();
@@ -257,41 +1363,420 @@ function loadDashboard() {
         monthsHtml += '<option value="' + m + '"' + (m === currentMonth ? ' selected' : '') + '>' + (m + 1) + ' — ' + S[mNames[m]] + ' ' + now.getFullYear() + '</option>';
     }
     adminContent.innerHTML =
-        '<div class="month-selector">' +
-            '<label>' + S.selectMonth + '</label>' +
-            '<select id="dashboardMonthSelect">' + monthsHtml + '</select>' +
+        '<div class="dashboard-filters">' +
+            '<div class="filter-group">' +
+                '<label>' + S.selectMonth + '</label>' +
+                '<select id="dashboardMonthSelect">' + monthsHtml + '</select>' +
+            '</div>' +
+            '<div class="filter-group">' +
+                '<label>Date Filter</label>' +
+                '<select id="dashboardDateFilter">' +
+                    '<option value="today">Today</option>' +
+                    '<option value="yesterday">Yesterday</option>' +
+                    '<option value="week" selected>This Week</option>' +
+                    '<option value="month">This Month</option>' +
+                    '<option value="year">This Year</option>' +
+                    '<option value="all">All Time</option>' +
+                    '<option value="custom">Custom Range</option>' +
+                '</select>' +
+            '</div>' +
+            '<div class="filter-group custom-dates" id="customDateGroup" style="display:none;">' +
+                '<input type="date" id="customStartDate" />' +
+                '<input type="date" id="customEndDate" />' +
+                '<button id="applyCustomFilter">Apply</button>' +
+            '</div>' +
         '</div>' +
         '<div class="admin-stats">' +
+            '<div class="stat-card stat-card--income"><h3>' + S.sales + '</h3><div class="stat-value" id="filteredSales">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--expense"><h3>' + S.expenses + '</h3><div class="stat-value" id="filteredExpenses">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--net"><h3>' + S.netProfit + '</h3><div class="stat-value" id="filteredNet">0 IQD</div></div>' +
+            '<div class="stat-card"><h3>' + S.orders + '</h3><div class="stat-value" id="filteredOrders">0</div></div>' +
+        '</div>' +
+        '<div class="admin-stats" style="margin-top:16px;">' +
             '<div class="stat-card stat-card--income"><h3>' + S.todaySales + '</h3><div class="stat-value" id="todaySales">0 IQD</div></div>' +
             '<div class="stat-card stat-card--expense"><h3>' + S.todayExpenses + '</h3><div class="stat-value" id="todayExpenses">0 IQD</div></div>' +
-            '<div class="stat-card stat-card--net"><h3>' + S.netIncome + '</h3><div class="stat-value" id="todayNet">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--net"><h3>' + S.todayNet + '</h3><div class="stat-value" id="todayNet">0 IQD</div></div>' +
             '<div class="stat-card"><h3>' + S.todayOrders + '</h3><div class="stat-value" id="todayOrders">0</div></div>' +
         '</div>' +
         '<div class="admin-stats" style="margin-top:16px;">' +
-            '<div class="stat-card stat-card--income"><h3>' + S.monthlySales + '</h3><div class="stat-value" id="monthlySales">0 IQD</div></div>' +
-            '<div class="stat-card stat-card--expense"><h3>' + S.monthlyExpenses + '</h3><div class="stat-value" id="monthlyExpenses">0 IQD</div></div>' +
-            '<div class="stat-card stat-card--net"><h3>' + S.netIncome + '</h3><div class="stat-value" id="monthlyNet">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--income"><h3>' + S.weekSales + '</h3><div class="stat-value" id="weekSales">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--expense"><h3>' + S.weekExpenses + '</h3><div class="stat-value" id="weekExpenses">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--net"><h3>' + S.weekNet + '</h3><div class="stat-value" id="weekNet">0 IQD</div></div>' +
+            '<div class="stat-card"><h3>' + S.weekOrders + '</h3><div class="stat-value" id="weekOrders">0</div></div>' +
+        '</div>' +
+        '<div class="admin-stats" style="margin-top:16px;">' +
+            '<div class="stat-card stat-card--income"><h3>' + S.monthSales + '</h3><div class="stat-value" id="monthlySales">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--expense"><h3>' + S.monthExpenses + '</h3><div class="stat-value" id="monthlyExpenses">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--net"><h3>' + S.monthNet + '</h3><div class="stat-value" id="monthlyNet">0 IQD</div></div>' +
             '<div class="stat-card"><h3>' + S.bestSelling + '</h3><div class="stat-value" id="bestSelling">-</div></div>' +
+        '</div>' +
+        '<div class="admin-stats" style="margin-top:16px;">' +
+            '<div class="stat-card stat-card--income"><h3>' + S.totalSales + '</h3><div class="stat-value" id="totalSales">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--expense"><h3>' + S.totalExpenses + '</h3><div class="stat-value" id="totalExpenses">0 IQD</div></div>' +
+            '<div class="stat-card stat-card--net"><h3>' + S.totalNet + '</h3><div class="stat-value" id="totalNet">0 IQD</div></div>' +
+            '<div class="stat-card"><h3>' + S.totalOrders + '</h3><div class="stat-value" id="totalOrders">0</div></div>' +
         '</div>' +
         '<div class="card">' +
             '<h2>' + S.dailySales + ' — <span id="dailySalesMonthLabel"></span></h2>' +
-            '<div id="dailySalesContainer"><div class="loading">Loading...</div></div>' +
+            '<div id="dailySalesContainer"></div>' +
         '</div>' +
         '<div class="card" style="margin-top:20px;">' +
             '<h2>' + S.recentSales + '</h2>' +
-            '<div id="recentSalesContainer"><div class="loading">Loading...</div></div>' +
+            '<div id="recentSalesContainer"></div>' +
         '</div>';
+    
     var monthSelect = document.getElementById('dashboardMonthSelect');
     if (monthSelect) {
         monthSelect.addEventListener('change', function () {
-            var m = parseInt(this.value, 10);
-            loadDashboardStats(m);
-            startDashboardListeners(m);
+            renderDashboardUI(parseInt(this.value, 10));
         });
     }
-    loadDashboardStats(currentMonth);
-    loadRecentSales();
-    startDashboardListeners(currentMonth);
+    
+    var dateFilter = document.getElementById('dashboardDateFilter');
+    if (dateFilter) {
+        dateFilter.addEventListener('change', function () {
+            var customGroup = document.getElementById('customDateGroup');
+            if (this.value === 'custom') {
+                customGroup.style.display = 'flex';
+            } else {
+                customGroup.style.display = 'none';
+                renderDashboardUI(currentMonth);
+            }
+        });
+    }
+    
+    var applyCustomBtn = document.getElementById('applyCustomFilter');
+    if (applyCustomBtn) {
+        applyCustomBtn.addEventListener('click', function () {
+            renderDashboardUI(currentMonth);
+        });
+    }
+    
+    renderDashboardUI(currentMonth);
+    renderRecentSalesUI();
+    startAdminLiveListeners();
+    syncAdminFinancialsFromServer(function () {
+        renderDashboardUI(currentMonth);
+        renderRecentSalesUI();
+    });
+}
+
+function renderDashboardUI(month) {
+    if (month === undefined || month === null) month = new Date().getMonth();
+    var year = new Date().getFullYear();
+    var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
+
+    var now = new Date();
+    var today = new Date();
+    today.setHours(0, 0, 0, 0);
+    var tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    var yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    
+    var weekStart = new Date(today);
+    weekStart.setDate(today.getDate() - today.getDay());
+    weekStart.setHours(0, 0, 0, 0);
+    var weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 7);
+    
+    var mStart = new Date(year, month, 1);
+    var mEnd = new Date(year, month + 1, 1);
+    var yearStart = new Date(year, 0, 1);
+    var yearEnd = new Date(year + 1, 0, 1);
+    
+    var startMs = mStart.getTime();
+    var endMs = mEnd.getTime();
+    var todayMs = today.getTime();
+    var tomorrowMs = tomorrow.getTime();
+    var yesterdayMs = yesterday.getTime();
+    var yesterdayTomorrowMs = todayMs;
+    var weekStartMs = weekStart.getTime();
+    var weekEndMs = weekEnd.getTime();
+    var yearStartMs = yearStart.getTime();
+    var yearEndMs = yearEnd.getTime();
+
+    var sales = getSalesDataSource();
+    var expenses = getExpensesDataSource();
+    var lang = localStorage.getItem('selectedLang') || 'ku';
+
+    var todaySalesTotal = 0;
+    var todayOrderCount = 0;
+    var todayExpTotal = 0;
+    
+    var yesterdaySalesTotal = 0;
+    var yesterdayOrderCount = 0;
+    var yesterdayExpTotal = 0;
+    
+    var weekSalesTotal = 0;
+    var weekOrderCount = 0;
+    var weekExpTotal = 0;
+    
+    var monthlyTotal = 0;
+    var monthOrderCount = 0;
+    var monthExpTotal = 0;
+    
+    var yearSalesTotal = 0;
+    var yearOrderCount = 0;
+    var yearExpTotal = 0;
+    
+    var totalSales = 0;
+    var totalOrders = 0;
+    var totalExpenses = 0;
+    
+    var dayTotals = {};
+    var itemCounts = {};
+    var weekItemCounts = {};
+    var monthItemCounts = {};
+    var totalItemCounts = {};
+
+    sales.forEach(function (s) {
+        var ms = saleTimestampToMs(s);
+        var total = s.total || 0;
+        
+        if (ms >= todayMs && ms < tomorrowMs) {
+            todaySalesTotal += total;
+            todayOrderCount++;
+        }
+        
+        if (ms >= yesterdayMs && ms < yesterdayTomorrowMs) {
+            yesterdaySalesTotal += total;
+            yesterdayOrderCount++;
+        }
+        
+        if (ms >= weekStartMs && ms < weekEndMs) {
+            weekSalesTotal += total;
+            weekOrderCount++;
+        }
+        
+        if (ms >= startMs && ms < endMs) {
+            monthlyTotal += total;
+            monthOrderCount++;
+            var dayKey = new Date(ms).getDate();
+            dayTotals[dayKey] = (dayTotals[dayKey] || 0) + total;
+        }
+        
+        if (ms >= yearStartMs && ms < yearEndMs) {
+            yearSalesTotal += total;
+            yearOrderCount++;
+        }
+        
+        totalSales += total;
+        totalOrders++;
+        
+        if (s.items) {
+            s.items.forEach(function (it) {
+                var itemName = it.name || it['name_' + lang] || it.name_en || '—';
+                var qty = it.quantity || 1;
+                
+                if (!itemCounts[itemName]) itemCounts[itemName] = 0;
+                if (!weekItemCounts[itemName]) weekItemCounts[itemName] = 0;
+                if (!monthItemCounts[itemName]) monthItemCounts[itemName] = 0;
+                if (!totalItemCounts[itemName]) totalItemCounts[itemName] = 0;
+                
+                itemCounts[itemName] += qty;
+                weekItemCounts[itemName] += qty;
+                monthItemCounts[itemName] += qty;
+                totalItemCounts[itemName] += qty;
+            });
+        }
+    });
+
+    expenses.forEach(function (e) {
+        var ms = expenseTimestampToMs(e);
+        var price = e.price || 0;
+        
+        if (isExpenseOnLocalDay(e, today)) todayExpTotal += price;
+        if (isExpenseOnLocalDay(e, yesterday)) yesterdayExpTotal += price;
+        if (ms >= weekStartMs && ms < weekEndMs) weekExpTotal += price;
+        if (isExpenseInMonth(e, month, year)) monthExpTotal += price;
+        if (ms >= yearStartMs && ms < yearEndMs) yearExpTotal += price;
+        totalExpenses += price;
+    });
+
+    var labelEl = document.getElementById('dailySalesMonthLabel');
+    if (labelEl) labelEl.textContent = getMonthName(month, S);
+
+    var elToday = document.getElementById('todaySales');
+    if (elToday) elToday.textContent = todaySalesTotal.toLocaleString() + ' IQD';
+    var elTodayOrders = document.getElementById('todayOrders');
+    if (elTodayOrders) elTodayOrders.textContent = todayOrderCount.toString();
+    var elTodayExp = document.getElementById('todayExpenses');
+    if (elTodayExp) elTodayExp.textContent = todayExpTotal.toLocaleString() + ' IQD';
+    var elTodayNet = document.getElementById('todayNet');
+    if (elTodayNet) elTodayNet.textContent = (todaySalesTotal - todayExpTotal).toLocaleString() + ' IQD';
+    
+    var elWeekSales = document.getElementById('weekSales');
+    if (elWeekSales) elWeekSales.textContent = weekSalesTotal.toLocaleString() + ' IQD';
+    var elWeekOrders = document.getElementById('weekOrders');
+    if (elWeekOrders) elWeekOrders.textContent = weekOrderCount.toString();
+    var elWeekExp = document.getElementById('weekExpenses');
+    if (elWeekExp) elWeekExp.textContent = weekExpTotal.toLocaleString() + ' IQD';
+    var elWeekNet = document.getElementById('weekNet');
+    if (elWeekNet) elWeekNet.textContent = (weekSalesTotal - weekExpTotal).toLocaleString() + ' IQD';
+    
+    var elM = document.getElementById('monthlySales');
+    if (elM) elM.textContent = monthlyTotal.toLocaleString() + ' IQD';
+    var elMExp = document.getElementById('monthlyExpenses');
+    if (elMExp) elMExp.textContent = monthExpTotal.toLocaleString() + ' IQD';
+    var elMNet = document.getElementById('monthlyNet');
+    if (elMNet) elMNet.textContent = (monthlyTotal - monthExpTotal).toLocaleString() + ' IQD';
+    
+    var elTotalSales = document.getElementById('totalSales');
+    if (elTotalSales) elTotalSales.textContent = totalSales.toLocaleString() + ' IQD';
+    var elTotalOrders = document.getElementById('totalOrders');
+    if (elTotalOrders) elTotalOrders.textContent = totalOrders.toString();
+    var elTotalExp = document.getElementById('totalExpenses');
+    if (elTotalExp) elTotalExp.textContent = totalExpenses.toLocaleString() + ' IQD';
+    var elTotalNet = document.getElementById('totalNet');
+    if (elTotalNet) elTotalNet.textContent = (totalSales - totalExpenses).toLocaleString() + ' IQD';
+
+    var bestName = '-';
+    var bestQty = 0;
+    Object.keys(monthItemCounts).forEach(function (name) {
+        if (monthItemCounts[name] > bestQty) { bestQty = monthItemCounts[name]; bestName = name; }
+    });
+    var elB = document.getElementById('bestSelling');
+    if (elB) {
+        if (bestQty > 0) {
+            elB.innerHTML = '<span class="best-item-name">' + bestName + '</span> <span class="best-item-qty">(' + bestQty + ' ' + S.sold + ')</span>';
+        } else {
+            elB.textContent = '-';
+        }
+    }
+
+    var daysInM = new Date(year, month + 1, 0).getDate();
+    var html = '<table class="daily-sales-table"><thead><tr><th>Day</th><th>' + S.total + ' (IQD)</th></tr></thead><tbody>';
+    for (var d = 1; d <= daysInM; d++) {
+        var dTotal = dayTotals[d] || 0;
+        var cls = dTotal > 0 ? 'day-sales' : 'day-sales zero';
+        var isToday = (d === today.getDate() && month === today.getMonth());
+        html += '<tr' + (isToday ? ' style="background:rgba(212,175,55,0.06);"' : '') + '><td>' + (isToday ? '<strong style="color:var(--gold);">' + d + ' ★</strong>' : d) + '</td><td class="' + cls + '">' + dTotal.toLocaleString() + ' IQD</td></tr>';
+    }
+    html += '</tbody></table>';
+    var container = document.getElementById('dailySalesContainer');
+    if (container) container.innerHTML = html;
+    
+    applyDateFilter(sales, expenses, lang, S);
+}
+
+function expenseTimestampToMs(e) {
+    if (!e) return 0;
+    var sec = deriveExpenseTimestampSeconds(e);
+    return sec != null ? sec * 1000 : 0;
+}
+
+function applyDateFilter(sales, expenses, lang, S) {
+    var dateFilter = document.getElementById('dashboardDateFilter');
+    if (!dateFilter) return;
+    
+    var filterType = dateFilter.value;
+    var now = new Date();
+    var startMs, endMs;
+    
+    switch (filterType) {
+        case 'today':
+            var today = new Date();
+            today.setHours(0, 0, 0, 0);
+            var tomorrow = new Date(today);
+            tomorrow.setDate(tomorrow.getDate() + 1);
+            startMs = today.getTime();
+            endMs = tomorrow.getTime();
+            break;
+        case 'yesterday':
+            var yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            yesterday.setHours(0, 0, 0, 0);
+            var today = new Date();
+            today.setHours(0, 0, 0, 0);
+            startMs = yesterday.getTime();
+            endMs = today.getTime();
+            break;
+        case 'week':
+            var weekStart = new Date();
+            weekStart.setDate(now.getDate() - now.getDay());
+            weekStart.setHours(0, 0, 0, 0);
+            var weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekStart.getDate() + 7);
+            startMs = weekStart.getTime();
+            endMs = weekEnd.getTime();
+            break;
+        case 'month':
+            var monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+            var monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+            startMs = monthStart.getTime();
+            endMs = monthEnd.getTime();
+            break;
+        case 'year':
+            var yearStart = new Date(now.getFullYear(), 0, 1);
+            var yearEnd = new Date(now.getFullYear() + 1, 0, 1);
+            startMs = yearStart.getTime();
+            endMs = yearEnd.getTime();
+            break;
+        case 'custom':
+            var customStart = document.getElementById('customStartDate');
+            var customEnd = document.getElementById('customEndDate');
+            if (customStart && customEnd && customStart.value && customEnd.value) {
+                startMs = new Date(customStart.value).setHours(0, 0, 0, 0);
+                endMs = new Date(customEnd.value).setHours(23, 59, 59, 999);
+            } else {
+                return;
+            }
+            break;
+        case 'all':
+        default:
+            startMs = 0;
+            endMs = Date.now();
+            break;
+    }
+    
+    var filteredSales = 0;
+    var filteredOrders = 0;
+    var filteredExpenses = 0;
+    
+    sales.forEach(function (s) {
+        var ms = saleTimestampToMs(s);
+        if (ms >= startMs && ms < endMs) {
+            filteredSales += s.total || 0;
+            filteredOrders++;
+        }
+    });
+    
+    expenses.forEach(function (e) {
+        var ms = expenseTimestampToMs(e);
+        if (ms >= startMs && ms < endMs) {
+            filteredExpenses += e.price || 0;
+        }
+    });
+    
+    var elFilteredSales = document.getElementById('filteredSales');
+    if (elFilteredSales) elFilteredSales.textContent = filteredSales.toLocaleString() + ' IQD';
+    var elFilteredOrders = document.getElementById('filteredOrders');
+    if (elFilteredOrders) elFilteredOrders.textContent = filteredOrders.toString();
+    var elFilteredExp = document.getElementById('filteredExpenses');
+    if (elFilteredExp) elFilteredExp.textContent = filteredExpenses.toLocaleString() + ' IQD';
+    var elFilteredNet = document.getElementById('filteredNet');
+    if (elFilteredNet) elFilteredNet.textContent = (filteredSales - filteredExpenses).toLocaleString() + ' IQD';
+}
+
+function renderRecentSalesUI() {
+    var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
+    var container = document.getElementById('recentSalesContainer');
+    if (!container) return;
+
+    var rows = getSalesDataSource().slice().sort(function (a, b) {
+        return saleTimestampToMs(b) - saleTimestampToMs(a);
+    }).slice(0, 5);
+
+    if (rows.length === 0) {
+        container.innerHTML = '<p style="color:#888;padding:16px;">' + S.noSalesYet + '</p>';
+        return;
+    }
+    renderRecentSalesTable(rows, S, container);
+}
+
+function paintDashboardFromCache(month) {
+    renderDashboardUI(month);
 }
 
 function stopDashboardListeners() {
@@ -299,175 +1784,34 @@ function stopDashboardListeners() {
         try { unsub(); } catch (e) { /* ignore */ }
     });
     dashboardUnsubscribes = [];
+    _adminLiveListenersStarted = false;
+    _adminSalesLive = null;
+    _adminExpensesLive = null;
 }
 
 function startDashboardListeners(month) {
-    stopDashboardListeners();
-    if (!window.db || !document.getElementById('dashboardMonthSelect')) return;
-    if (month === undefined || month === null) {
-        var sel = document.getElementById('dashboardMonthSelect');
-        month = sel ? parseInt(sel.value, 10) : new Date().getMonth();
-    }
-    var year = new Date().getFullYear();
-    var mStart = new Date(year, month, 1);
-    var mEnd = new Date(year, month + 1, 1);
-
-    function refreshDashboard() {
-        if (!document.getElementById('todaySales')) return;
-        loadDashboardStats(month);
-        loadRecentSales();
-    }
-
-    var salesUnsub = db.collection('sales')
-        .where('timestamp', '>=', mStart)
-        .where('timestamp', '<', mEnd)
-        .onSnapshot(refreshDashboard, function (e) {
-            console.error('Dashboard sales listener error:', e);
-        });
-    dashboardUnsubscribes.push(salesUnsub);
-
-    var expUnsub = db.collection('expenses')
-        .where('timestamp', '>=', mStart)
-        .where('timestamp', '<', mEnd)
-        .onSnapshot(refreshDashboard, function (e) {
-            console.error('Dashboard expenses listener error:', e);
-        });
-    dashboardUnsubscribes.push(expUnsub);
+    startAdminLiveListeners();
+    renderDashboardUI(month);
 }
 
 function loadDashboardStats(month) {
-    if (month === undefined || month === null) month = new Date().getMonth();
-    var year = new Date().getFullYear();
-    var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
-
-    var today = new Date();
-    today.setHours(0, 0, 0, 0);
-    var tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-
-    var mStart = new Date(year, month, 1);
-    var mEnd = new Date(year, month + 1, 1);
-
-    document.getElementById('dailySalesMonthLabel').textContent = getMonthName(month, S);
-
-    db.collection('sales').where('timestamp', '>=', today).where('timestamp', '<', tomorrow).get().then(function (snap) {
-        var total = 0;
-        snap.forEach(function (d) { total += (d.data().total || 0); });
-        var el = document.getElementById('todaySales');
-        if (el) el.textContent = total.toLocaleString() + ' IQD';
-        var elOrders = document.getElementById('todayOrders');
-        if (elOrders) elOrders.textContent = snap.size.toString();
-
-        // Today expenses
-        db.collection('expenses').where('timestamp', '>=', today).where('timestamp', '<', tomorrow).get().then(function (expSnap) {
-            var expTotal = 0;
-            expSnap.forEach(function (d) { expTotal += (d.data().price || 0); });
-            var elExp = document.getElementById('todayExpenses');
-            if (elExp) elExp.textContent = expTotal.toLocaleString() + ' IQD';
-            var elNet = document.getElementById('todayNet');
-            if (elNet) elNet.textContent = (total - expTotal).toLocaleString() + ' IQD';
-        }).catch(function () {});
-    }).catch(function () {});
-
-    var monthlyTotal = 0;
-    var dayTotals = {};
-    var itemCounts = {};
-
-    db.collection('sales').where('timestamp', '>=', mStart).where('timestamp', '<', mEnd).get().then(function (snap) {
-        snap.forEach(function (d) {
-            var sale = d.data();
-            monthlyTotal += (sale.total || 0);
-            var ts = sale.timestamp;
-            var saleDate;
-            if (ts && typeof ts.toDate === 'function') saleDate = ts.toDate();
-            else if (ts && ts.seconds) saleDate = new Date(ts.seconds * 1000);
-            else saleDate = new Date(ts);
-            var dayKey = saleDate.getDate();
-            dayTotals[dayKey] = (dayTotals[dayKey] || 0) + (sale.total || 0);
-            if (sale.items) {
-                sale.items.forEach(function (it) {
-                    var itemName = it.name || it['name_' + (localStorage.getItem('selectedLang') || 'ku')] || it.name_en || '—';
-                    var qty = it.quantity || 1;
-                    if (!itemCounts[itemName]) itemCounts[itemName] = 0;
-                    itemCounts[itemName] += qty;
-                });
-            }
-        });
-        var elM = document.getElementById('monthlySales');
-        if (elM) elM.textContent = monthlyTotal.toLocaleString() + ' IQD';
-
-        var bestName = '-';
-        var bestQty = 0;
-        Object.keys(itemCounts).forEach(function (name) {
-            if (itemCounts[name] > bestQty) { bestQty = itemCounts[name]; bestName = name; }
-        });
-        var elB = document.getElementById('bestSelling');
-        if (elB) {
-            if (bestQty > 0) {
-                elB.innerHTML = '<span class="best-item-name">' + bestName + '</span> <span class="best-item-qty">(' + bestQty + ' ' + S.sold + ')</span>';
-            } else {
-                elB.textContent = '-';
-            }
-        }
-
-        var daysInM = new Date(year, month + 1, 0).getDate();
-        var html = '<table class="daily-sales-table"><thead><tr><th>Day</th><th>' + S.total + ' (IQD)</th></tr></thead><tbody>';
-        for (var d = 1; d <= daysInM; d++) {
-            var dTotal = dayTotals[d] || 0;
-            var cls = dTotal > 0 ? 'day-sales' : 'day-sales zero';
-            var isToday = (d === today.getDate() && month === today.getMonth());
-            html += '<tr' + (isToday ? ' style="background:rgba(212,175,55,0.06);"' : '') + '><td>' + (isToday ? '<strong style="color:var(--gold);">' + d + ' ★</strong>' : d) + '</td><td class="' + cls + '">' + dTotal.toLocaleString() + ' IQD</td></tr>';
-        }
-        html += '</tbody></table>';
-        var container = document.getElementById('dailySalesContainer');
-        if (container) container.innerHTML = html;
-
-        // Monthly expenses
-        db.collection('expenses').where('timestamp', '>=', mStart).where('timestamp', '<', mEnd).get().then(function (expSnap) {
-            var expTotal = 0;
-            expSnap.forEach(function (d) { expTotal += (d.data().price || 0); });
-            var elExp = document.getElementById('monthlyExpenses');
-            if (elExp) elExp.textContent = expTotal.toLocaleString() + ' IQD';
-            var elNet = document.getElementById('monthlyNet');
-            if (elNet) elNet.textContent = (monthlyTotal - expTotal).toLocaleString() + ' IQD';
-        }).catch(function () {});
-    }).catch(function () {
-        var elM = document.getElementById('monthlySales');
-        if (elM) elM.textContent = '0 IQD';
-        var elTodayOrders = document.getElementById('todayOrders');
-        if (elTodayOrders) elTodayOrders.textContent = '0';
-        var elB = document.getElementById('bestSelling');
-        if (elB) elB.textContent = '-';
-        var elExp = document.getElementById('monthlyExpenses');
-        if (elExp) elExp.textContent = '0 IQD';
-        var elNet = document.getElementById('monthlyNet');
-        if (elNet) elNet.textContent = '0 IQD';
-        var container = document.getElementById('dailySalesContainer');
-        if (container) container.innerHTML = '';
-    });
+    renderDashboardUI(month);
 }
 
 function loadRecentSales() {
-    var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
-    var container = document.getElementById('recentSalesContainer');
-    if (!container) return;
+    renderRecentSalesUI();
+}
 
-    db.collection('sales').orderBy('timestamp', 'desc').limit(5).get().then(function (snap) {
-        if (snap.empty) {
-            container.innerHTML = '<p style="color:#888;padding:16px;">' + S.noSalesYet + '</p>';
-            return;
-        }
-        var html = '<div class="table-responsive"><table class="admin-table"><thead><tr><th>' + S.time + '</th><th>' + S.items + '</th><th>' + S.total + ' (IQD)</th></tr></thead><tbody>';
-        snap.forEach(function (doc) {
-            var sale = doc.data();
-            var cnt = sale.items ? sale.items.reduce(function (s, i) { return s + (i.quantity || 1); }, 0) : 0;
-            html += '<tr><td>' + toDisplayTime(sale.timestamp) + '</td><td>' + cnt + S.itemsCount + '</td><td>' + (sale.total || 0) + ' IQD</td></tr>';
-        });
-        html += '</tbody></table></div>';
-        container.innerHTML = html;
-    }).catch(function () {
-        container.innerHTML = '<p style="color:#888;padding:16px;">' + S.noSalesData + '</p>';
+function renderRecentSalesTable(sales, S, container) {
+    var html = '<div class="table-responsive"><table class="admin-table"><thead><tr><th>' + S.time + '</th><th>' + S.items + '</th><th>' + S.total + ' (IQD)</th></tr></thead><tbody>';
+    sales.forEach(function (sale) {
+        var cnt = sale.items ? sale.items.reduce(function (s, i) { return s + (i.quantity || 1); }, 0) : 0;
+        var tsMs = saleTimestampToMs(sale);
+        var timeStr = tsMs ? toDisplayTime(new Date(tsMs)) : '—';
+        html += '<tr><td>' + timeStr + '</td><td>' + cnt + S.itemsCount + '</td><td>' + (sale.total || 0) + ' IQD</td></tr>';
     });
+    html += '</tbody></table></div>';
+    container.innerHTML = html;
 }
 
 /* ============ MANAGE ITEMS ============ */
@@ -544,7 +1888,7 @@ function loadManageItems() {
     var adminContent = document.getElementById('adminContent');
     adminContent.innerHTML =
         '<div class="card">' +
-            '<h2>' + S.manageItems + '</h2>' +
+            '<h2>' + S.manageItems + ' <small style="opacity:0.45;font-size:0.75rem;font-weight:400">' + ADMIN_VERSION + '</small></h2>' +
             '<button class="btn-primary" id="addItemBtn" style="margin-bottom:16px;">' + S.addNewItem + '</button>' +
             '<div class="form-group"><input type="text" id="itemSearch" placeholder="' + S.searchItems + '"></div>' +
             '<div class="form-group admin-items-cat-filter">' +
@@ -568,10 +1912,10 @@ function loadManageItems() {
                 '<div class="modal-content">' +
                     '<span class="modal-close" id="modalClose">&times;</span>' +
                     '<h2 id="modalTitle">' + S.addNewItem + '</h2>' +
-                    '<form id="itemForm">' +
-                        '<div class="form-group"><label>' + S.kurdishName + '</label><input type="text" id="itemNameKu" required></div>' +
-                        '<div class="form-group"><label>' + S.arabicName + '</label><input type="text" id="itemNameAr" required></div>' +
-                        '<div class="form-group"><label>' + S.englishName + '</label><input type="text" id="itemNameEn" required></div>' +
+                    '<form id="itemForm" novalidate>' +
+                        '<div class="form-group"><label>' + S.kurdishName + '</label><input type="text" id="itemNameKu" autocomplete="off"></div>' +
+                        '<div class="form-group"><label>' + S.arabicName + '</label><input type="text" id="itemNameAr" autocomplete="off"></div>' +
+                        '<div class="form-group"><label>' + S.englishName + '</label><input type="text" id="itemNameEn" autocomplete="off"></div>' +
                         '<div class="form-group"><label>' + S.kurdishDesc + '</label><textarea id="itemDescKu" rows="2"></textarea></div>' +
                         '<div class="form-group"><label>' + S.arabicDesc + '</label><textarea id="itemDescAr" rows="2"></textarea></div>' +
                         '<div class="form-group"><label>' + S.englishDesc + '</label><textarea id="itemDescEn" rows="2"></textarea></div>' +
@@ -579,17 +1923,16 @@ function loadManageItems() {
                             '<input type="file" accept="image/*" id="itemImageFile" style="margin-bottom:6px;">' +
                             '<input type="text" id="itemImageURL" placeholder="' + (S.imageUrlOrUpload || 'Paste image URL or upload above') + '">' +
                             '<img id="itemImagePreview" style="display:none;margin-top:8px;max-height:120px;border-radius:8px;"></div>' +
-                        '<div class="form-group"><label>' + S.price + '</label><input type="number" id="itemPrice" min="0" required></div>' +
+                        '<div class="form-group"><label>' + S.price + '</label><input type="text" inputmode="decimal" id="itemPrice" autocomplete="off"></div>' +
                         '<div class="form-group"><label>' + S.category + '</label>' +
                             '<div style="display:flex;gap:8px;">' +
-                                '<select id="itemCategory" required style="flex:1;">' +
+                                '<select id="itemCategory" style="flex:1;">' +
                                     '<option value="">' + S.select + '</option>' +
                                 '</select>' +
                                 '<button type="button" class="btn-primary" id="addNewCategoryBtn" style="padding:8px 12px;">+</button>' +
-                            '</div>' +
-                        '</div>' +
+                            '</div></div>' +
                         '<div class="form-group"><label><input type="checkbox" id="itemAvailable" checked> ' + S.available + '</label></div>' +
-                        '<button type="submit" class="btn-primary">' + S.saveItem + '</button>' +
+                        '<button type="button" class="btn-primary" id="saveItemBtn">' + S.saveItem + '</button>' +
                         '<button type="button" class="btn-secondary" id="cancelItemBtn" style="margin-left:8px;">' + S.cancel + '</button>' +
                         '<input type="hidden" id="itemId" value="">' +
                     '</form>' +
@@ -616,6 +1959,7 @@ function loadManageItems() {
     loadCategoryFilter();
     refreshCategoriesCache();
     wireItemEvents();
+    hydrateItemsUiFromCache();
     startItemsListener();
 }
 
@@ -655,10 +1999,30 @@ function filterItemDocs(docs, searchTerm, cat) {
 }
 
 function startItemsListener() {
-    stopItemsListener();
-    if (!window.db || !document.getElementById('itemsList')) return;
+    var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
+    if (!document.getElementById('itemsList')) return;
 
-    itemsUnsubscribe = db.collection('menuItems').onSnapshot(function (snap) {
+    if (itemsUnsubscribe) {
+        try { itemsUnsubscribe(); } catch (e) { /* ignore */ }
+        itemsUnsubscribe = null;
+    }
+
+    hydrateItemsUiFromCache();
+
+    if (!window.db) {
+        if (!_itemsSnapDocs.length) {
+            clearAdminLoadingEl('itemsList', '<p>' + S.noItemsFound + '</p>');
+        }
+        return;
+    }
+
+    function applyItemsSnap(snap) {
+        if (snap.empty) {
+            if (hydrateItemsUiFromCache()) return;
+            if (isFirestoreCacheEmptySnap(snap)) return;
+            clearAdminLoadingEl('itemsList', '<p>' + S.noItemsFound + '</p>');
+            return;
+        }
         _itemsSnapDocs = collectItemDocsFromSnap(snap);
         refreshCategoryFilterOptions();
         refreshItemCategoryDropdown();
@@ -676,7 +2040,7 @@ function startItemsListener() {
             menuCache.push(Object.assign({ id: d.id }, data));
         });
         localStorage.setItem('cachedCashierItems', JSON.stringify(cashierCache));
-        localStorage.setItem('cachedMenuItems', JSON.stringify(menuCache));
+        writeCachedMenuItemsFlat(menuCache);
 
         var catNames = {};
         _itemsSnapDocs.forEach(function (d) {
@@ -684,20 +2048,61 @@ function startItemsListener() {
             if (c && c !== 'Water') catNames[c] = true;
         });
         localStorage.setItem('cachedMenuCategoryNames', JSON.stringify(Object.keys(catNames)));
+    }
+
+    adminGetWithTimeout(db.collection('menuItems'), 8000).then(applyItemsSnap).catch(function (e) {
+        console.warn('[admin items] get failed:', e.message);
+        if (!hydrateItemsUiFromCache()) {
+            clearAdminLoadingEl('itemsList', '<p style="color:#C62828;">' + S.errorPrefix + (S.menuConnectionHint || 'Check connection') + '</p>');
+        }
+    });
+
+    if (navigator.onLine) {
+        fetchMenuItemsForAdmin(12000).then(function (items) {
+            if (!items || !items.length) return;
+            writeCachedMenuItemsFlat(items);
+            hydrateItemsUiFromCache();
+            loadCategoryFilter();
+        }).catch(function (e) {
+            console.warn('[admin items] REST fallback:', e.message || e);
+        });
+    }
+
+    setTimeout(function () {
+        if (!adminSectionStillLoading('itemsList')) return;
+        if (hydrateItemsUiFromCache()) return;
+        clearAdminLoadingEl('itemsList', '<p>' + S.noItemsFound + '</p>');
+    }, 10000);
+
+    itemsUnsubscribe = db.collection('menuItems').onSnapshot(function (snap) {
+        applyItemsSnap(snap);
     }, function (e) {
         console.error('Items listener error:', e);
-        loadItemsList();
+        if (!hydrateItemsUiFromCache()) {
+            clearAdminLoadingEl('itemsList', '<p style="color:#C62828;">' + S.errorPrefix + e.message + '</p>');
+        }
     });
 }
 
 function loadItemsList() {
      var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
-     db.collection('menuItems').get().then(function (snap) {
+     if (hydrateItemsUiFromCache()) {
+         loadCategoryFilter();
+         return;
+     }
+     if (!window.db) {
+         var el = document.getElementById('itemsList');
+         if (el) el.innerHTML = '<p>' + S.noItemsFound + '</p>';
+         return;
+     }
+     adminGetWithTimeout(db.collection('menuItems'), 8000).then(function (snap) {
          var docs = [];
-         snap.forEach(function (d) { var data = d.data(); if (data.category && data.category !== 'Water') { docs.push(d); } });
+         snap.forEach(function (d) { var data = d.data(); if (data.category !== 'Water') { docs.push(d); } });
+         _itemsSnapDocs = docs;
          renderItemsList(docs);
          loadCategoryFilter();
     }).catch(function (e) {
+        if (hydrateItemsUiFromCache()) return;
         var el = document.getElementById('itemsList');
          if (el) el.innerHTML = '<p style="color:#C62828;">' + S.errorPrefix + e.message + '</p>';
     });
@@ -707,22 +2112,34 @@ function loadCategoriesDropdown() {
     var select = document.getElementById('itemCategory');
     if (!select) return Promise.resolve();
 
-    if (!window.db) {
-        refreshItemCategoryDropdown();
-        return Promise.resolve();
-    }
+    refreshItemCategoryDropdown();
 
-    return db.collection('categories').get().then(function (snap) {
+    if (!window.db) return Promise.resolve();
+
+    var restPromise = (typeof fetchCategoriesForAdmin === 'function')
+        ? fetchCategoriesForAdmin(12000).then(function (cats) {
+            if (cats && cats.length) {
+                localStorage.setItem('cachedCategories', JSON.stringify(cats));
+                refreshItemCategoryDropdown();
+            }
+        }).catch(function () {})
+        : Promise.resolve();
+
+    var sdkPromise = adminGetWithTimeout(db.collection('categories'), 8000).then(function (snap) {
         var categories = [];
         snap.forEach(function (doc) {
             categories.push({ id: doc.id, data: doc.data() });
         });
-        localStorage.setItem('cachedCategories', JSON.stringify(categories));
-        refreshItemCategoryDropdown();
+        if (categories.length) {
+            localStorage.setItem('cachedCategories', JSON.stringify(categories));
+            refreshItemCategoryDropdown();
+        }
     }).catch(function (e) {
         console.error('Error loading categories:', e);
         refreshItemCategoryDropdown();
     });
+
+    return Promise.all([restPromise, sdkPromise]);
 }
 
 function loadCategoriesFromCache() {
@@ -908,7 +2325,7 @@ function loadCategoryFilter() {
         return;
     }
 
-    db.collection('categories').get().then(function (snap) {
+    adminGetWithTimeout(db.collection('categories'), 8000).then(function (snap) {
         var categories = [];
         snap.forEach(function (doc) {
             categories.push({ id: doc.id, data: doc.data() });
@@ -925,7 +2342,10 @@ function renderItemsList(items) {
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     var list = document.getElementById('itemsList');
     if (!list) return;
-    if (items.length === 0) { list.innerHTML = '<p>' + S.noItemsFound + '</p>'; return; }
+    if (items.length === 0) {
+        list.innerHTML = '<p>' + S.noItemsFound + '</p>';
+        return;
+    }
 
     var lang = localStorage.getItem('selectedLang') || 'ku';
 
@@ -958,12 +2378,12 @@ function renderItemsList(items) {
         });
     }
 
-    if (!window.db) {
-        paintRows(buildCategoryMapFromCache());
-        return;
-    }
+    // Paint immediately — do not wait for categories fetch (was causing infinite Loading...).
+    paintRows(buildCategoryMapFromCache());
 
-    db.collection('categories').get().then(function (catSnap) {
+    if (!window.db) return;
+
+    adminGetWithTimeout(db.collection('categories'), 5000).then(function (catSnap) {
         var catMap = {};
         var categories = [];
         catSnap.forEach(function (catDoc) {
@@ -988,6 +2408,11 @@ function wireItemEvents() {
             document.getElementById('itemAvailable').checked = true;
             var pr = document.getElementById('itemImagePreview');
             if (pr) pr.style.display = 'none';
+            var saveBtn = document.getElementById('saveItemBtn');
+            if (saveBtn) {
+                saveBtn.disabled = false;
+                saveBtn.textContent = S.saveItem;
+            }
             var modal = document.getElementById('itemModal');
             modal.classList.add('active');
             activeItemModal = modal;
@@ -1012,10 +2437,25 @@ function wireItemEvents() {
     }
 
     var form = document.getElementById('itemForm');
+    function triggerSaveItem() {
+        try {
+            saveItem();
+        } catch (err) {
+            console.error('saveItem error:', err);
+            alert(S.itemSyncFailed + (err && err.message ? '\n' + err.message : ''));
+        }
+    }
     if (form) {
         form.addEventListener('submit', function (e) {
             e.preventDefault();
-            saveItem();
+            triggerSaveItem();
+        });
+    }
+    var saveItemBtn = document.getElementById('saveItemBtn');
+    if (saveItemBtn) {
+        saveItemBtn.addEventListener('click', function (e) {
+            e.preventDefault();
+            triggerSaveItem();
         });
     }
 
@@ -1120,15 +2560,40 @@ function applyItemFilter(searchTerm, cat) {
    offline. So we run the success UI immediately (the data is already saved
    locally) and just log any real sync failure. This keeps the entire dashboard
    usable with no internet. */
-function applyWrite(promise, onDone, onError) {
-    try { if (typeof onDone === 'function') onDone(); }
-    catch (e) { console.error('UI update error after write:', e); }
-    if (promise && typeof promise.catch === 'function') {
-        promise.catch(function (err) {
-            console.error('Firestore sync error (will retry when online):', err);
+var MENU_SYNC_WRITE = { requireSync: true };
+
+function applyWrite(promise, onDone, onError, options) {
+    options = options || {};
+    var waitForCloud = options.requireSync === true && navigator.onLine;
+
+    function callDone(isOfflineSave) {
+        try {
+            if (typeof onDone === 'function') onDone(!!isOfflineSave);
+        } catch (e) {
+            console.error('UI update error after write:', e);
+        }
+    }
+
+    if (!promise || typeof promise.then !== 'function') {
+        callDone(!navigator.onLine);
+        return;
+    }
+
+    if (waitForCloud) {
+        promise.then(function () {
+            callDone(false);
+        }).catch(function (err) {
+            console.error('Firestore sync error:', err);
             if (typeof onError === 'function') onError(err);
         });
+        return;
     }
+
+    callDone(!navigator.onLine);
+    promise.catch(function (err) {
+        console.error('Firestore sync error (will retry when online):', err);
+        if (typeof onError === 'function') onError(err);
+    });
 }
 
 /* Convert a chosen image file into a small base64 data URL so it is stored
@@ -1204,47 +2669,126 @@ function saveQuickCategory() {
     var placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%27400%27 height=%27300%27%3E%3Crect fill=%23e0e0e0 width=%27400%27 height=%27300%27/%3E%3Ctext x=%2750%25%27 y=%2750%25%27 font-size=%2724%27 text-anchor=%27middle%27 dy=%27.3em%27 fill=%23999%27%3ENo+Image%3C/text%3E%3C/svg%3E';
     var finalImg = imgUrl || placeholderImg;
 
-    var categoryData = {
+    var now = new Date().toISOString();
+    var plainData = {
         name_ku: nameKu,
         name_ar: nameAr,
         name_en: nameEn,
         image: finalImg,
-        created_at: firebase.firestore.FieldValue.serverTimestamp(),
-        updated_at: firebase.firestore.FieldValue.serverTimestamp()
+        created_at: now,
+        updated_at: now
     };
 
-    // Generate the doc id locally so we can select it immediately, even offline.
     var newCatRef = db.collection('categories').doc();
-    applyWrite(newCatRef.set(categoryData), function () {
-        upsertCachedCategory(newCatRef.id, categoryData);
-        document.getElementById('quickCategoryModal').classList.remove('active');
-        loadCategoriesDropdown();
-        renderCategoriesListNow();
-        var select = document.getElementById('itemCategory');
-        if (select) { select.value = newCatRef.id; }
-        alert(S.categorySaved);
+    applyMenuCloudWrite({
+        collection: 'categories',
+        docId: newCatRef.id,
+        isCreate: true,
+        sdkPromise: newCatRef.set(Object.assign({}, plainData, {
+            created_at: firebase.firestore.FieldValue.serverTimestamp(),
+            updated_at: firebase.firestore.FieldValue.serverTimestamp()
+        })),
+        plainData: plainData,
+        onDone: function (offline) {
+            upsertCachedCategory(newCatRef.id, plainData);
+            document.getElementById('quickCategoryModal').classList.remove('active');
+            loadCategoriesDropdown();
+            renderCategoriesListNow();
+            var select = document.getElementById('itemCategory');
+            if (select) { select.value = newCatRef.id; }
+            alert(offline ? S.categorySavedOffline : S.categorySavedCloud);
+        },
+        onError: function (err) {
+            alert(S.itemSyncFailed + (err && err.message ? '\n' + err.message : ''));
+        }
     });
 }
 
 function saveItem() {
      var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
-     var nameKu = document.getElementById('itemNameKu').value.trim();
-    var nameAr = document.getElementById('itemNameAr').value.trim();
-    var nameEn = document.getElementById('itemNameEn').value.trim();
-    var price = document.getElementById('itemPrice').value.trim();
-    var category = document.getElementById('itemCategory').value;
 
-    if (!nameKu || !nameAr || !nameEn || !price || !category) {
+     if (!window.db) {
+         alert(S.itemSyncFailed + '\nFirebase not ready.');
+         return;
+     }
+
+     var nameKuEl = document.getElementById('itemNameKu');
+     var nameArEl = document.getElementById('itemNameAr');
+     var nameEnEl = document.getElementById('itemNameEn');
+     var priceEl = document.getElementById('itemPrice');
+     var categoryEl = document.getElementById('itemCategory');
+     if (!nameKuEl || !nameArEl || !nameEnEl || !priceEl || !categoryEl) {
+         alert(S.itemSyncFailed);
+         return;
+     }
+
+     var nameKu = nameKuEl.value.trim();
+    var nameAr = nameArEl.value.trim();
+    var nameEn = nameEnEl.value.trim();
+    var price = priceEl.value.trim().replace(',', '.');
+    var category = categoryEl.value;
+
+    if (!nameKu || !nameAr || !nameEn || !price) {
         alert(S.fillAll);
         return;
     }
+    if (!category) {
+        alert(S.selectCategory || (S.fillAll + ' (' + S.category + ')'));
+        categoryEl.focus();
+        return;
+    }
+    if (isNaN(parseFloat(price))) {
+        alert(S.fillAll + ' (' + S.price + ')');
+        priceEl.focus();
+        return;
+    }
+
+    var saveBtn = document.getElementById('saveItemBtn');
+    if (saveBtn) {
+        saveBtn.disabled = true;
+        saveBtn.dataset.prevText = saveBtn.textContent;
+        saveBtn.textContent = '…';
+    }
+
+    var saveTimedOut = false;
+    var readyTimer = setTimeout(function () {
+        saveTimedOut = true;
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = saveBtn.dataset.prevText || S.saveItem;
+        }
+        alert(S.itemSyncFailed + '\n' + (S.connectionSlow || 'Connection slow — try again.'));
+    }, 12000);
+
+    function runSaveWhenAuthed() {
+     if (!isAdminAuthenticated()) {
+         clearTimeout(readyTimer);
+         if (saveBtn) {
+             saveBtn.disabled = false;
+             saveBtn.textContent = saveBtn.dataset.prevText || S.saveItem;
+         }
+         alert(S.itemSyncFailed + '\nPlease log in again.');
+         window.location.href = 'login.html';
+         return;
+     }
 
     var imgUrl = document.getElementById('itemImageURL').value.trim();
     var placeholderImg = 'data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 width=%27400%27 height=%27300%27%3E%3Crect fill=%23e0e0e0 width=%27400%27 height=%27300%27/%3E%3Ctext x=%2750%25%27 y=%2750%25%27 font-size=%2724%27 text-anchor=%27middle%27 dy=%27.3em%27 fill=%23999%27%3ENo+Image%3C/text%3E%3C/svg%3E';
     var finalImg = imgUrl || placeholderImg;
 
+    if (finalImg.length > 950000) {
+        clearTimeout(readyTimer);
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = saveBtn.dataset.prevText || S.saveItem;
+        }
+        alert(S.itemSyncFailed + '\nImage too large — paste a URL or use a smaller photo.');
+        return;
+    }
+
     var itemId = document.getElementById('itemId').value;
-    var itemData = {
+    var now = new Date().toISOString();
+    var plainData = {
         name_ku: nameKu, name_ar: nameAr, name_en: nameEn,
         description_ku: document.getElementById('itemDescKu').value.trim(),
         description_ar: document.getElementById('itemDescAr').value.trim(),
@@ -1253,31 +2797,80 @@ function saveItem() {
         category: category,
         image: finalImg,
         available: document.getElementById('itemAvailable').checked,
-        updated_at: firebase.firestore.FieldValue.serverTimestamp()
+        updated_at: now
     };
 
+    var ref;
     var promise;
+    var docId;
+    var isCreate = !itemId;
     if (itemId) {
-        promise = db.collection('menuItems').doc(itemId).update(itemData);
+        docId = itemId;
+        ref = db.collection('menuItems').doc(itemId);
+        promise = ref.update(Object.assign({}, plainData, {
+            updated_at: firebase.firestore.FieldValue.serverTimestamp()
+        }));
     } else {
-        itemData.created_at = firebase.firestore.FieldValue.serverTimestamp();
-        promise = db.collection('menuItems').add(itemData);
+        ref = db.collection('menuItems').doc();
+        docId = ref.id;
+        plainData.created_at = now;
+        promise = ref.set(Object.assign({}, plainData, {
+            created_at: firebase.firestore.FieldValue.serverTimestamp(),
+            updated_at: firebase.firestore.FieldValue.serverTimestamp()
+        }));
     }
 
-    applyWrite(promise, function () {
+    function finishSave(offline) {
+        clearTimeout(readyTimer);
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = saveBtn.dataset.prevText || S.saveItem;
+        }
+        upsertCachedMenuItem(docId, plainData);
         document.getElementById('itemModal').classList.remove('active');
         activeItemModal = null;
-        invalidateCashierCache();
-        loadItemsList();
-        alert(S.itemSaved);
+        hydrateItemsUiFromCache();
+        alert(offline ? S.itemSavedOffline : S.itemSavedCloud);
+    }
+
+    function failSave(err) {
+        clearTimeout(readyTimer);
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = saveBtn.dataset.prevText || S.saveItem;
+        }
+        alert(S.itemSyncFailed + (err && err.message ? '\n' + err.message : ''));
+    }
+
+    applyMenuCloudWrite({
+        collection: 'menuItems',
+        docId: docId,
+        isCreate: isCreate,
+        sdkPromise: promise,
+        plainData: plainData,
+        onDone: finishSave,
+        onError: failSave
+    });
+    }
+
+    whenAdminReady(function () {
+        if (saveTimedOut) return;
+        clearTimeout(readyTimer);
+        runSaveWhenAuthed();
+    }).catch(function (err) {
+        clearTimeout(readyTimer);
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = saveBtn.dataset.prevText || S.saveItem;
+        }
+        alert(S.itemSyncFailed + (err && err.message ? '\n' + err.message : ''));
     });
 }
 
 function editItem(itemId) {
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
-    db.collection('menuItems').doc(itemId).get().then(function (doc) {
-        if (!doc.exists) { alert(S.noItemsFound); return; }
-        var item = doc.data();
+
+    function openEditModal(item) {
         document.getElementById('itemId').value = itemId;
         document.getElementById('itemNameKu').value = item.name_ku || '';
         document.getElementById('itemNameAr').value = item.name_ar || '';
@@ -1293,22 +2886,57 @@ function editItem(itemId) {
             if (pr) { pr.src = item.image; pr.style.display = 'block'; }
         }
         document.getElementById('modalTitle').textContent = S.editItem;
+        var saveBtn = document.getElementById('saveItemBtn');
+        if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.textContent = S.saveItem;
+        }
         var modal = document.getElementById('itemModal');
         modal.classList.add('active');
         activeItemModal = modal;
-        // Reload categories dropdown and set the category value
         loadCategoriesDropdown().then(function () {
             document.getElementById('itemCategory').value = item.category || '';
         });
-    }).catch(function (e) { alert(S.errorPrefix + e.message); });
+    }
+
+    var cached = getMenuItemFromLocalCache(itemId);
+    if (cached) openEditModal(cached);
+
+    if (!window.db) {
+        if (!cached) alert(S.noItemsFound);
+        return;
+    }
+
+    db.collection('menuItems').doc(itemId).get().then(function (doc) {
+        if (!doc.exists) {
+            if (!cached) alert(S.noItemsFound);
+            return;
+        }
+        openEditModal(doc.data());
+    }).catch(function (e) {
+        if (!cached) alert(S.errorPrefix + e.message);
+    });
 }
 
 function deleteItem(itemId) {
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     if (!confirm(S.deleteConfirm)) return;
-    applyWrite(db.collection('menuItems').doc(itemId).delete(), function () {
-        invalidateCashierCache();
-        loadItemsList();
+    if (!isAdminAuthenticated()) {
+        alert(S.itemSyncFailed + '\nPlease log in again.');
+        return;
+    }
+    applyMenuCloudWrite({
+        collection: 'menuItems',
+        docId: itemId,
+        isDelete: true,
+        sdkPromise: db.collection('menuItems').doc(itemId).delete(),
+        onDone: function () {
+            removeCachedMenuItem(itemId);
+            hydrateItemsUiFromCache();
+        },
+        onError: function (err) {
+            alert(S.itemSyncFailed + (err && err.message ? '\n' + err.message : ''));
+        }
     });
 }
 
@@ -1445,10 +3073,41 @@ function loadCategoriesList() {
 
     // Show cached categories immediately (includes ones just saved offline).
     renderCategoriesListNow();
+    clearAdminLoadingEl('categoriesList', '');
 
-    if (!window.db) return;
+    if (!window.db) {
+        if (!readCachedCategories().length) {
+            clearAdminLoadingEl('categoriesList', '<p style="color:var(--text-muted);padding:8px 2px;">' + (i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en).noCategories + '</p>');
+        }
+        return;
+    }
 
-    db.collection('menuItems').get().then(function (snap) {
+    adminGetWithTimeout(db.collection('categories'), 8000).then(function (snap) {
+        var fromServer = [];
+        snap.forEach(function (doc) {
+            fromServer.push({ id: doc.id, data: doc.data() });
+        });
+        var merged = mergeCategoryLists(fromServer, readCachedCategories());
+        localStorage.setItem('cachedCategories', JSON.stringify(merged));
+        var have = {};
+        merged.forEach(function (c) { have[c.id] = true; });
+        renderCategoriesTable(mergeMenuCategories(merged, have));
+    }).catch(function () {
+        renderCategoriesListNow();
+    });
+
+    if (navigator.onLine) {
+        fetchCategoriesForAdmin(12000).then(function (cats) {
+            if (!cats || !cats.length) return;
+            var merged = mergeCategoryLists(cats, readCachedCategories());
+            localStorage.setItem('cachedCategories', JSON.stringify(merged));
+            renderCategoriesListNow();
+        }).catch(function (e) {
+            console.warn('[admin categories] REST fallback:', e.message || e);
+        });
+    }
+
+    adminGetWithTimeout(db.collection('menuItems'), 8000).then(function (snap) {
         var names = {};
         snap.forEach(function (d) { var c = (d.data() || {}).category; if (c) names[c] = true; });
         localStorage.setItem('cachedMenuCategoryNames', JSON.stringify(Object.keys(names)));
@@ -1457,6 +3116,16 @@ function loadCategoriesList() {
 
     stopCategoriesListener();
     categoriesUnsubscribe = db.collection('categories').onSnapshot(function (snap) {
+        if (snap.empty) {
+            if (isFirestoreCacheEmptySnap(snap)) {
+                renderCategoriesListNow();
+                return;
+            }
+            var haveEmpty = {};
+            readCachedCategories().forEach(function (c) { haveEmpty[c.id] = true; });
+            renderCategoriesTable(mergeMenuCategories(readCachedCategories(), haveEmpty));
+            return;
+        }
         var fromServer = [];
         snap.forEach(function (doc) {
             fromServer.push({ id: doc.id, data: doc.data() });
@@ -1561,10 +3230,12 @@ function syncCategoriesFromItems() {
             });
 
             if (count === 0) { alert(S.noNewCategories || 'All categories are already added.'); return; }
-            applyWrite(batch.commit(), function () {
+            applyWrite(batch.commit(), function (offline) {
                 loadCategoriesList();
-                alert((S.categoriesSynced || 'Categories added:') + ' ' + count);
-            });
+                alert((offline ? S.categorySavedOffline : (S.categoriesSynced || 'Categories added:')) + ' ' + count);
+            }, function (err) {
+                alert(S.itemSyncFailed + (err && err.message ? '\n' + err.message : ''));
+            }, MENU_SYNC_WRITE);
         });
     }).catch(function (e) { alert(S.errorPrefix + e.message); });
 }
@@ -1585,31 +3256,48 @@ function saveCategory() {
     var finalImg = imgUrl || placeholderImg;
 
     var categoryId = document.getElementById('categoryId').value;
-    var categoryData = {
+    var now = new Date().toISOString();
+    var plainData = {
         name_ku: nameKu,
         name_ar: nameAr,
         name_en: nameEn,
         image: finalImg,
-        updated_at: firebase.firestore.FieldValue.serverTimestamp()
+        updated_at: now
     };
 
     var promise;
     var savedId = categoryId;
+    var isCreate = !categoryId;
     if (categoryId) {
-        promise = db.collection('categories').doc(categoryId).set(categoryData, { merge: true });
+        promise = db.collection('categories').doc(categoryId).set(Object.assign({}, plainData, {
+            updated_at: firebase.firestore.FieldValue.serverTimestamp()
+        }), { merge: true });
     } else {
-        categoryData.created_at = firebase.firestore.FieldValue.serverTimestamp();
+        plainData.created_at = now;
         var newRef = db.collection('categories').doc();
         savedId = newRef.id;
-        promise = newRef.set(categoryData);
+        promise = newRef.set(Object.assign({}, plainData, {
+            created_at: firebase.firestore.FieldValue.serverTimestamp(),
+            updated_at: firebase.firestore.FieldValue.serverTimestamp()
+        }));
     }
 
-    applyWrite(promise, function () {
-        upsertCachedCategory(savedId, categoryData);
-        document.getElementById('categoryModal').classList.remove('active');
-        renderCategoriesListNow();
-        loadCategoriesDropdown();
-        alert(S.categorySaved);
+    applyMenuCloudWrite({
+        collection: 'categories',
+        docId: savedId,
+        isCreate: isCreate,
+        sdkPromise: promise,
+        plainData: plainData,
+        onDone: function (offline) {
+            upsertCachedCategory(savedId, plainData);
+            document.getElementById('categoryModal').classList.remove('active');
+            renderCategoriesListNow();
+            loadCategoriesDropdown();
+            alert(offline ? S.categorySavedOffline : S.categorySavedCloud);
+        },
+        onError: function (err) {
+            alert(S.itemSyncFailed + (err && err.message ? '\n' + err.message : ''));
+        }
     });
 }
 
@@ -1661,7 +3349,11 @@ function deleteCategory(categoryId) {
         // Delete the category
         batch.delete(db.collection('categories').doc(categoryId));
 
-        applyWrite(batch.commit(), function () { loadCategoriesList(); });
+        applyWrite(batch.commit(), function () {
+            loadCategoriesList();
+        }, function (err) {
+            alert(S.itemSyncFailed + (err && err.message ? '\n' + err.message : ''));
+        }, MENU_SYNC_WRITE);
     }).catch(function (e) { alert(S.errorPrefix + e.message); });
 }
 
@@ -1864,17 +3556,42 @@ function wireCashierOrderToggle() {
     var toggle = document.getElementById('cashierOrderToggle');
     var panel = document.getElementById('cashierOrderPanel');
     if (!toggle || !panel) return;
+    if (window.innerWidth <= 1024) {
+        panel.classList.remove('collapsed');
+        return;
+    }
     var collapsed = false;
     toggle.addEventListener('click', function () {
         collapsed = !collapsed;
         panel.classList.toggle('collapsed', collapsed);
         toggle.textContent = collapsed ? '▼' : '▲';
     });
-    if (window.innerWidth <= 768) {
-        collapsed = true;
-        panel.classList.add('collapsed');
-        toggle.textContent = '▼';
+}
+
+function applyCashierItemsSnap(snap) {
+    if (snap.empty) {
+        if (getCashierItemsFromLocalStorage().length > 0) {
+            loadCashierItemsFromCache();
+            return;
+        }
+        if (isFirestoreCacheEmptySnap(snap)) return;
+        showCashierEmptyState();
+        return;
     }
+    var items = normalizeCashierItems(snap);
+    localStorage.setItem('cachedCashierItems', JSON.stringify(items));
+    var menuCache = [];
+    snap.forEach(function (d) {
+        menuCache.push(Object.assign({ id: d.id }, d.data()));
+    });
+    writeCachedMenuItemsFlat(menuCache);
+    refreshCategoriesCache(function () {
+        if (items.length > 0) {
+            renderCashierProducts(items);
+        } else {
+            showCashierEmptyState();
+        }
+    });
 }
 
 function loadCashierItems() {
@@ -1893,21 +3610,34 @@ function loadCashierItems() {
     }
 
     stopCashierListener();
-    cashierUnsubscribe = db.collection('menuItems').onSnapshot(function (snap) {
-        var items = normalizeCashierItems(snap);
-        localStorage.setItem('cachedCashierItems', JSON.stringify(items));
-        refreshCategoriesCache(function () {
-            if (items.length > 0) {
-                renderCashierProducts(items);
-            } else {
-                showCashierEmptyState();
-            }
+
+    adminGetWithTimeout(db.collection('menuItems'), 8000).then(applyCashierItemsSnap).catch(function (e) {
+        console.warn('[cashier] get failed:', e.message);
+        loadCashierItemsFromCache();
+    });
+
+    if (navigator.onLine) {
+        fetchMenuItemsForAdmin(12000).then(function (flatItems) {
+            if (!flatItems || !flatItems.length) return;
+            writeCachedMenuItemsFlat(flatItems);
+            var items = flatItems.filter(function (it) {
+                return it && it.available !== false && it.category !== 'Water';
+            }).map(function (it) {
+                var v = Object.assign({}, it);
+                var id = v.id;
+                delete v.id;
+                return { id: id, v: v };
+            });
+            localStorage.setItem('cachedCashierItems', JSON.stringify(items));
+            if (items.length > 0) renderCashierProducts(items);
+        }).catch(function (e) {
+            console.warn('[cashier] REST fallback:', e.message || e);
         });
-    }, function (e) {
+    }
+
+    cashierUnsubscribe = db.collection('menuItems').onSnapshot(applyCashierItemsSnap, function (e) {
         console.error('Error loading cashier items:', e);
-        if (getCashierItemsFromLocalStorage().length === 0) {
-            showCashierEmptyState();
-        }
+        loadCashierItemsFromCache();
     });
 }
 
@@ -1947,8 +3677,20 @@ function wireCashierEvents() {
         printBtn.addEventListener('click', function () {
             if (orderItems.length === 0) { alert(S.addFirst); return; }
             var itemsCopy = orderItems.slice();
-            printReceipt(itemsCopy);
-            recordCashierSale(itemsCopy);
+            
+            // Show print dialog first, then save to income
+            var printSuccess = printReceipt(itemsCopy);
+            
+            // Only save to income after print dialog is shown
+            if (printSuccess !== false) {
+                // Small delay to ensure print dialog appears before saving
+                setTimeout(function() {
+                    recordCashierSale(itemsCopy);
+                }, 1000);
+            } else {
+                // If print failed, still save to income
+                recordCashierSale(itemsCopy);
+            }
         });
     }
 }
@@ -1957,18 +3699,40 @@ function recordCashierSale(items) {
     if (!items || items.length === 0) return null;
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     var total = items.reduce(function (s, i) { return s + i.price * i.quantity; }, 0);
-    var saleWrite = db.collection('sales').add({
+    var now = new Date();
+    var tempId = 'local-' + Date.now();
+    var cacheEntry = {
+        id: tempId,
         items: items.map(function (i) { return { name: i.name, price: i.price, quantity: i.quantity }; }),
         total: total,
-        timestamp: firebase.firestore.Timestamp.fromDate(new Date()),
+        timestampSeconds: Math.floor(now.getTime() / 1000),
+        cashier: (window.auth && auth.currentUser) ? auth.currentUser.email : S.unknown
+    };
+    upsertCachedSale(cacheEntry);
+
+    var saleWrite = db.collection('sales').add({
+        items: cacheEntry.items,
+        total: total,
+        timestamp: firebase.firestore.Timestamp.fromDate(now),
         created_at: firebase.firestore.FieldValue.serverTimestamp(),
-        cashier: (window.auth && auth.currentUser) ? auth.currentUser.email : S.unknown,
-        createdBy: (window.auth && auth.currentUser) ? auth.currentUser.uid : null
+        cashier: cacheEntry.cashier
     });
+    console.log('[sale] Writing sale to Firestore, total:', total);
     applyWrite(saleWrite, function () {
+        console.log('[sale] Sale written successfully');
         orderItems.length = 0;
         updateOrderDisplay();
     });
+    if (saleWrite && typeof saleWrite.then === 'function') {
+        saleWrite.then(function (ref) {
+            if (ref && ref.id) {
+                removeCachedSale(tempId);
+                upsertCachedSale(Object.assign({}, cacheEntry, { id: ref.id }));
+            }
+        }).catch(function (err) {
+            console.error('Sale sync error (will retry when online):', err);
+        });
+    }
     return total;
 }
 
@@ -2126,12 +3890,11 @@ function printHtmlInFrame(html) {
         frame.id = 'receiptPrintFrame';
         frame.title = 'Receipt print';
         frame.setAttribute('aria-hidden', 'true');
+        frame.style.cssText =
+            'position:fixed;left:-9999px;top:0;width:' + w + ';min-width:' + w + ';max-width:' + w +
+            ';height:800px;border:0;visibility:hidden;overflow:hidden;background:#fff';
         document.body.appendChild(frame);
     }
-
-    frame.style.cssText =
-        'position:fixed;left:-9999px;top:0;width:' + w + ';min-width:' + w + ';max-width:' + w +
-        ';height:800px;border:0;visibility:hidden;overflow:hidden;background:#fff';
 
     var win = frame.contentWindow;
     if (!win) {
@@ -2147,21 +3910,32 @@ function printHtmlInFrame(html) {
     function runPrint() {
         try {
             win.focus();
-            win.print();
+            // Mobile-friendly print approach
+            if (/Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+                // For mobile devices, use a longer delay and ensure proper focus
+                setTimeout(function() {
+                    win.print();
+                }, 500);
+            } else {
+                win.print();
+            }
         } catch (err) {
             console.error('Print error:', err);
             alert('Print failed. Please try again.');
         }
     }
 
+    // Increased delay for mobile devices
+    var delay = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent) ? 500 : 250;
+    
     if (doc.fonts && doc.fonts.ready) {
         doc.fonts.ready.then(function () {
-            setTimeout(runPrint, 150);
+            setTimeout(runPrint, delay);
         }).catch(function () {
-            setTimeout(runPrint, 200);
+            setTimeout(runPrint, delay + 50);
         });
     } else {
-        setTimeout(runPrint, 250);
+        setTimeout(runPrint, delay);
     }
 
     return true;
@@ -2232,56 +4006,87 @@ function printReceipt(itemsOverride) {
 }
 
 function setupAdminOfflineDetection() {
+    var menuIndicator = document.getElementById('offlineIndicator');
+    if (menuIndicator) menuIndicator.remove();
+
     window.addEventListener('online', function () {
-        console.log('Admin: Back online');
-        showAdminConnectionStatus(true);
+        console.log('Admin: Back online — syncing data');
+        scheduleAdminConnectionStatus(true);
+        warmAdminOfflineCache(function () {
+            refreshAdminCurrentSection();
+        });
     });
 
     window.addEventListener('offline', function () {
         console.log('Admin: Gone offline');
-        showAdminConnectionStatus(false);
+        scheduleAdminConnectionStatus(false);
+        hydrateAdminFromLocalCache();
+        refreshAdminCurrentSection();
     });
 
-    // Show the offline badge immediately if we start offline.
-    if (!navigator.onLine) showAdminConnectionStatus(false);
+    if (!navigator.onLine) scheduleAdminConnectionStatus(false);
 }
 
-var _adminOnlineHideTimer = null;
+var _adminStatusShowTimer = null;
+var _adminStatusHideTimer = null;
+var ADMIN_STATUS_DELAY_MS = 2000;
+var ADMIN_STATUS_VISIBLE_MS = 3000;
+
+function clearAdminStatusTimers() {
+    if (_adminStatusShowTimer) { clearTimeout(_adminStatusShowTimer); _adminStatusShowTimer = null; }
+    if (_adminStatusHideTimer) { clearTimeout(_adminStatusHideTimer); _adminStatusHideTimer = null; }
+}
+
+function hideAdminConnectionStatus() {
+    var existing = document.getElementById('adminOfflineIndicator');
+    if (!existing) return;
+    existing.style.opacity = '0';
+    setTimeout(function () { if (existing.parentNode) existing.remove(); }, 400);
+}
+
+function scheduleAdminConnectionStatus(online) {
+    clearAdminStatusTimers();
+    hideAdminConnectionStatus();
+    _adminStatusShowTimer = setTimeout(function () {
+        _adminStatusShowTimer = null;
+        showAdminConnectionStatusNow(online);
+        _adminStatusHideTimer = setTimeout(function () {
+            _adminStatusHideTimer = null;
+            hideAdminConnectionStatus();
+        }, ADMIN_STATUS_VISIBLE_MS);
+    }, ADMIN_STATUS_DELAY_MS);
+}
 
 function showAdminConnectionStatus(online) {
+    scheduleAdminConnectionStatus(online);
+}
+
+function showAdminConnectionStatusNow(online) {
     var existing = document.getElementById('adminOfflineIndicator');
     if (existing) existing.remove();
-    if (_adminOnlineHideTimer) { clearTimeout(_adminOnlineHideTimer); _adminOnlineHideTimer = null; }
 
     var lang = localStorage.getItem('selectedLang') || 'ku';
     var S = i18n[lang] || i18n.en;
 
     var indicator = document.createElement('div');
     indicator.id = 'adminOfflineIndicator';
-    indicator.style.cssText = 'position:fixed;top:70px;right:20px;color:#fff;padding:8px 16px;border-radius:20px;font-size:12px;font-weight:600;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.3);display:flex;align-items:center;gap:8px;transition:opacity .4s ease;';
+    indicator.style.cssText = 'position:fixed;top:70px;right:20px;color:#fff;padding:8px 16px;border-radius:20px;font-size:12px;font-weight:600;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,0.3);display:flex;align-items:center;gap:8px;transition:opacity .4s ease;opacity:0;';
 
     var dot = document.createElement('span');
     dot.style.cssText = 'width:8px;height:8px;border-radius:50%;background:#fff;display:inline-block;';
     indicator.appendChild(dot);
 
     var label = document.createElement('span');
-
     if (online) {
         indicator.style.background = '#2E7D32';
         label.textContent = (S.backOnline || 'Back online — syncing');
-        indicator.appendChild(label);
-        document.body.appendChild(indicator);
-        // Auto-hide the green confirmation after a few seconds.
-        _adminOnlineHideTimer = setTimeout(function () {
-            indicator.style.opacity = '0';
-            setTimeout(function () { if (indicator.parentNode) indicator.remove(); }, 400);
-        }, 3000);
     } else {
         indicator.style.background = '#C62828';
         label.textContent = (S.offlineMode || 'Offline Mode — changes will sync');
-        indicator.appendChild(label);
-        document.body.appendChild(indicator);
     }
+    indicator.appendChild(label);
+    document.body.appendChild(indicator);
+    requestAnimationFrame(function () { indicator.style.opacity = '1'; });
 }
 
 function populateTestData() {
@@ -2452,7 +4257,7 @@ function updateOrderDisplay() {
 
 function applyAdminAccent(accent) {
     var allowed = ['gold', 'emerald', 'sapphire', 'amethyst', 'ruby', 'sunset', 'rose', 'graphite', 'cyan'];
-    if (allowed.indexOf(accent) === -1) accent = 'gold';
+    if (allowed.indexOf(accent) === -1) accent = 'sapphire';
     document.documentElement.setAttribute('data-accent', accent);
     try { localStorage.setItem('adminAccent', accent); } catch (e) {}
     var themeMeta = { gold: '#D4AF37', emerald: '#10B981', sapphire: '#3B82F6', amethyst: '#8B5CF6', ruby: '#F43F5E', sunset: '#F97316', rose: '#EC4899', graphite: '#94A3B8', cyan: '#06B6D4' };
@@ -2460,6 +4265,258 @@ function applyAdminAccent(accent) {
     if (meta && themeMeta[accent]) meta.setAttribute('content', themeMeta[accent]);
 }
 window.applyAdminAccent = applyAdminAccent;
+
+function getCafeTimeMinuteOptions(parts, lang) {
+    var opts = [];
+    var seen = {};
+    for (var m = 0; m < 60; m += 5) {
+        var val = String(m).padStart(2, '0');
+        opts.push({
+            value: val,
+            label: typeof toLocaleDigits === 'function' ? toLocaleDigits(val, lang) : val
+        });
+        seen[m] = true;
+    }
+    if (!seen[parts.minute]) {
+        var customVal = String(parts.minute).padStart(2, '0');
+        opts.push({
+            value: customVal,
+            label: typeof toLocaleDigits === 'function' ? toLocaleDigits(customVal, lang) : customVal
+        });
+        opts.sort(function (a, b) { return parseInt(a.value, 10) - parseInt(b.value, 10); });
+    }
+    return opts;
+}
+
+function buildCafeTimePickerMarkup(idPrefix, timeValue, fallback, S, lang) {
+    var parts = typeof parseCafeTimeParts === 'function'
+        ? parseCafeTimeParts(timeValue, fallback)
+        : { normalized: fallback, hour12: 2, minute: 0, isPm: idPrefix === 'cafeOpen' };
+    var digits = function (n) {
+        return typeof toLocaleDigits === 'function' ? toLocaleDigits(String(n), lang) : String(n);
+    };
+    var hourOpts = '';
+    for (var h = 1; h <= 12; h++) {
+        hourOpts += '<option value="' + h + '"' + (h === parts.hour12 ? ' selected' : '') + '>' + digits(h) + '</option>';
+    }
+    var minOpts = '';
+    getCafeTimeMinuteOptions(parts, lang).forEach(function (item) {
+        minOpts += '<option value="' + item.value + '"' + (parseInt(item.value, 10) === parts.minute ? ' selected' : '') + '>' + item.label + '</option>';
+    });
+    var periodOpts =
+        '<option value="am"' + (!parts.isPm ? ' selected' : '') + '>' + (S.timeAm || 'بەیانی') + '</option>' +
+        '<option value="pm"' + (parts.isPm ? ' selected' : '') + '>' + (S.timePm || 'دوای نیوەڕۆ') + '</option>';
+    var display = typeof formatCafeTimeForDisplay === 'function'
+        ? formatCafeTimeForDisplay(parts.normalized, lang)
+        : parts.normalized;
+
+    return '<div class="cafe-time-picker" data-prefix="' + idPrefix + '">' +
+        '<button type="button" class="cafe-time-picker-btn" id="' + idPrefix + 'TimeBtn" aria-expanded="false">' +
+            '<i class="fa-regular fa-clock" aria-hidden="true"></i>' +
+            '<span class="cafe-time-picker-btn-text" id="' + idPrefix + 'TimeLabel">' + display + '</span>' +
+            '<i class="fa-solid fa-chevron-down cafe-time-picker-chevron" aria-hidden="true"></i>' +
+        '</button>' +
+        '<div class="cafe-time-picker-panel" id="' + idPrefix + 'TimePanel" hidden>' +
+            '<div class="cafe-time-hourmin">' +
+                '<select class="cafe-time-select" id="' + idPrefix + 'Hour" aria-label="hour">' + hourOpts + '</select>' +
+                '<span class="cafe-time-colon">:</span>' +
+                '<select class="cafe-time-select" id="' + idPrefix + 'Minute" aria-label="minute">' + minOpts + '</select>' +
+            '</div>' +
+            '<select class="cafe-time-select cafe-time-period" id="' + idPrefix + 'Period" aria-label="period">' + periodOpts + '</select>' +
+            '<button type="button" class="btn-secondary cafe-time-apply-btn" id="' + idPrefix + 'TimeApply">' + (S.applyTime || 'Apply') + '</button>' +
+        '</div>' +
+        '<input type="hidden" id="' + idPrefix + 'Time" value="' + parts.normalized + '">' +
+    '</div>';
+}
+
+function readCafeTimePickerValue(prefix) {
+    var hourEl = document.getElementById(prefix + 'Hour');
+    var minEl = document.getElementById(prefix + 'Minute');
+    var periodEl = document.getElementById(prefix + 'Period');
+    if (!hourEl || !minEl || !periodEl || typeof buildCafeTimeFromParts !== 'function') return null;
+    return buildCafeTimeFromParts(hourEl.value, minEl.value, periodEl.value === 'pm');
+}
+
+function updateCafeTimePickerDisplay(prefix, lang) {
+    var hidden = document.getElementById(prefix + 'Time');
+    var label = document.getElementById(prefix + 'TimeLabel');
+    if (!hidden) return;
+    var fallback = prefix === 'cafeOpen' ? '14:00' : '02:00';
+    var normalized = typeof normalizeCafeTimeValue === 'function'
+        ? normalizeCafeTimeValue(hidden.value, fallback)
+        : hidden.value;
+    hidden.value = normalized;
+    if (label && typeof formatCafeTimeForDisplay === 'function') {
+        label.textContent = formatCafeTimeForDisplay(normalized, lang);
+    }
+}
+
+function applyCafeTimePicker(prefix, lang) {
+    var val = readCafeTimePickerValue(prefix);
+    if (!val) return;
+    var hidden = document.getElementById(prefix + 'Time');
+    if (hidden) hidden.value = val;
+    updateCafeTimePickerDisplay(prefix, lang);
+    var panel = document.getElementById(prefix + 'TimePanel');
+    var btn = document.getElementById(prefix + 'TimeBtn');
+    if (panel) {
+        panel.hidden = true;
+        panel.classList.remove('is-open');
+    }
+    if (btn) {
+        btn.setAttribute('aria-expanded', 'false');
+        btn.classList.remove('is-open');
+    }
+    schedulePersistCafeHours();
+}
+
+function syncCafeTimePickerFromStorage(prefix, lang) {
+    var hidden = document.getElementById(prefix + 'Time');
+    if (!hidden || typeof parseCafeTimeParts !== 'function') return;
+    var storageKey = prefix === 'cafeOpen' ? 'cafeOpenTime' : 'cafeCloseTime';
+    var fallback = prefix === 'cafeOpen' ? '14:00' : '02:00';
+    var stored = localStorage.getItem(storageKey) || hidden.value;
+    var parts = parseCafeTimeParts(stored, fallback);
+    hidden.value = parts.normalized;
+
+    var hourEl = document.getElementById(prefix + 'Hour');
+    var minEl = document.getElementById(prefix + 'Minute');
+    var periodEl = document.getElementById(prefix + 'Period');
+    if (hourEl) hourEl.value = String(parts.hour12);
+    if (minEl) {
+        var minuteVal = String(parts.minute).padStart(2, '0');
+        if (!minEl.querySelector('option[value="' + minuteVal + '"]')) {
+            var opt = document.createElement('option');
+            opt.value = minuteVal;
+            opt.textContent = typeof toLocaleDigits === 'function' ? toLocaleDigits(minuteVal, lang) : minuteVal;
+            minEl.appendChild(opt);
+        }
+        minEl.value = minuteVal;
+    }
+    if (periodEl) periodEl.value = parts.isPm ? 'pm' : 'am';
+    updateCafeTimePickerDisplay(prefix, lang);
+}
+
+function setupCafeTimePickers(lang) {
+    ['cafeOpen', 'cafeClose'].forEach(function (prefix) {
+        var btn = document.getElementById(prefix + 'TimeBtn');
+        var panel = document.getElementById(prefix + 'TimePanel');
+        var applyBtn = document.getElementById(prefix + 'TimeApply');
+        if (!btn || !panel) return;
+
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var willOpen = panel.hidden;
+            document.querySelectorAll('.cafe-time-picker-panel').forEach(function (p) {
+                p.hidden = true;
+                p.classList.remove('is-open');
+            });
+            document.querySelectorAll('.cafe-time-picker-btn').forEach(function (b) {
+                b.setAttribute('aria-expanded', 'false');
+                b.classList.remove('is-open');
+            });
+            if (willOpen) {
+                panel.hidden = false;
+                panel.classList.add('is-open');
+                btn.classList.add('is-open');
+            }
+            btn.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        });
+
+        if (applyBtn) {
+            applyBtn.addEventListener('click', function () {
+                applyCafeTimePicker(prefix, lang);
+            });
+        }
+
+        ['Hour', 'Minute', 'Period'].forEach(function (part) {
+            var el = document.getElementById(prefix + part);
+            if (el) {
+                el.addEventListener('change', function () {
+                    applyCafeTimePicker(prefix, lang);
+                });
+            }
+        });
+    });
+
+    if (!window._cafeTimePickerDocClose) {
+        window._cafeTimePickerDocClose = true;
+        document.addEventListener('click', function (e) {
+            if (e.target.closest('.cafe-time-picker')) return;
+            document.querySelectorAll('.cafe-time-picker-panel').forEach(function (p) {
+                p.hidden = true;
+                p.classList.remove('is-open');
+            });
+            document.querySelectorAll('.cafe-time-picker-btn').forEach(function (b) {
+                b.setAttribute('aria-expanded', 'false');
+                b.classList.remove('is-open');
+            });
+        });
+    }
+
+    var saveHoursBtn = document.getElementById('saveCafeHoursBtn');
+    if (saveHoursBtn && saveHoursBtn.dataset.wired !== '1') {
+        saveHoursBtn.dataset.wired = '1';
+        saveHoursBtn.addEventListener('click', saveCafeHoursOnly);
+    }
+}
+
+var cafeHoursSaveTimer = null;
+
+function persistCafeHoursToCloud(showAlert) {
+    var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
+    var lang = localStorage.getItem('selectedLang') || 'ku';
+    var cafeOpenTime = readCafeTimePickerValue('cafeOpen');
+    var cafeCloseTime = readCafeTimePickerValue('cafeClose');
+    if (!cafeOpenTime) {
+        var openHidden = document.getElementById('cafeOpenTime');
+        cafeOpenTime = openHidden ? openHidden.value : '14:00';
+    }
+    if (!cafeCloseTime) {
+        var closeHidden = document.getElementById('cafeCloseTime');
+        cafeCloseTime = closeHidden ? closeHidden.value : '02:00';
+    }
+    if (typeof normalizeCafeTimeValue === 'function') {
+        cafeOpenTime = normalizeCafeTimeValue(cafeOpenTime, '14:00');
+        cafeCloseTime = normalizeCafeTimeValue(cafeCloseTime, '02:00');
+    }
+
+    localStorage.setItem('cafeOpenTime', cafeOpenTime);
+    localStorage.setItem('cafeCloseTime', cafeCloseTime);
+
+    var openEl = document.getElementById('cafeOpenTime');
+    var closeEl = document.getElementById('cafeCloseTime');
+    if (openEl) openEl.value = cafeOpenTime;
+    if (closeEl) closeEl.value = cafeCloseTime;
+    updateCafeTimePickerDisplay('cafeOpen', lang);
+    updateCafeTimePickerDisplay('cafeClose', lang);
+
+    if (typeof saveCafeSettingsToFirestore === 'function') {
+        saveCafeSettingsToFirestore({
+            cafeOpenTime: cafeOpenTime,
+            cafeCloseTime: cafeCloseTime
+        }, function (err) {
+            if (showAlert) {
+                alert(err ? (S.saveHours + ' (local only)') : S.hoursSaved);
+            }
+        });
+    } else if (showAlert) {
+        alert(S.hoursSaved);
+    }
+}
+
+function schedulePersistCafeHours() {
+    if (cafeHoursSaveTimer) clearTimeout(cafeHoursSaveTimer);
+    cafeHoursSaveTimer = setTimeout(function () {
+        persistCafeHoursToCloud(false);
+    }, 500);
+}
+
+function saveCafeHoursOnly() {
+    applyCafeTimePicker('cafeOpen', localStorage.getItem('selectedLang') || 'ku');
+    applyCafeTimePicker('cafeClose', localStorage.getItem('selectedLang') || 'ku');
+    persistCafeHoursToCloud(true);
+}
 
 function loadSettings() {
      var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
@@ -2471,9 +4528,9 @@ function loadSettings() {
       };
       var TL = themeLabels[localStorage.getItem('selectedLang') || 'ku'] || themeLabels.en;
       var themes = [
+          { id: 'sapphire', color: '#3B82F6', dark: '#1D4ED8' },
           { id: 'gold', color: '#D4AF37', dark: '#B8910C' },
           { id: 'emerald', color: '#10B981', dark: '#047857' },
-          { id: 'sapphire', color: '#3B82F6', dark: '#1D4ED8' },
           { id: 'amethyst', color: '#8B5CF6', dark: '#6D28D9' },
           { id: 'ruby', color: '#F43F5E', dark: '#BE123C' },
           { id: 'sunset', color: '#F97316', dark: '#C2410C' },
@@ -2481,7 +4538,7 @@ function loadSettings() {
           { id: 'cyan', color: '#06B6D4', dark: '#0E7490' },
           { id: 'graphite', color: '#94A3B8', dark: '#475569' }
       ];
-      var currentAccent = localStorage.getItem('adminAccent') || 'gold';
+      var currentAccent = localStorage.getItem('adminAccent') || 'sapphire';
       var swatchesHtml = themes.map(function (t) {
           var glow = 'rgba(0,0,0,0.25)';
           return '<button type="button" class="theme-swatch' + (t.id === currentAccent ? ' active' : '') + '" data-accent="' + t.id + '" ' +
@@ -2492,27 +4549,125 @@ function loadSettings() {
                  '</button>';
       }).join('');
 
+      var settingsLang = localStorage.getItem('selectedLang') || 'ku';
+      var openTimeStored = localStorage.getItem('cafeOpenTime') || '14:00';
+      var closeTimeStored = localStorage.getItem('cafeCloseTime') || '02:00';
+
       adminContent.innerHTML =
-          '<div class="card">' +
+          '<div class="card settings-contact-card">' +
               '<h2>' + S.settings + '</h2>' +
-              '<div class="form-group"><label>' + S.cafeName + '</label><input type="text" id="cafeName" value="' + (localStorage.getItem('cafeName') || S.siteName) + '"></div>' +
-              '<div class="form-group"><label>' + S.whatsappPhone + '</label><input type="tel" id="whatsappPhone" value="' + (localStorage.getItem('whatsappPhone') || '9647506454656') + '" placeholder="' + S.phonePlaceholder + '"></div>' +
-              '<div class="form-group"><label>Location (maps link)</label><input type="url" id="cafeLocationUrl" value="' + (localStorage.getItem('cafeLocationUrl') || 'https://maps.app.goo.gl/mmi5iv7mnGKxKZoq9?g_st=ic') + '" placeholder="https://maps.google.com/..."></div>' +
-              '<div class="form-group"><label>Location label</label><input type="text" id="cafeLocationLabel" value="' + (localStorage.getItem('cafeLocationLabel') || 'بەحرکە-مجەمع') + '"></div>' +
-              '<div class="form-group"><label>Instagram URL</label><input type="url" id="cafeInstagram" value="' + (localStorage.getItem('cafeInstagram') || '') + '" placeholder="https://instagram.com/..."></div>' +
-              '<div class="form-group"><label>' + S.currency + '</label><input type="text" value="IQD" readonly></div>' +
-              '<button class="btn-primary" id="saveSettingsBtn">' + S.saveSettings + '</button>' +
+              '<div class="settings-social-field">' +
+                  '<span class="settings-social-icon settings-social-icon--cafe" aria-hidden="true"><i class="fa-solid fa-mug-hot"></i></span>' +
+                  '<div class="settings-social-input-wrap">' +
+                      '<label for="cafeName">' + S.cafeName + '</label>' +
+                      '<input type="text" id="cafeName" value="' + (localStorage.getItem('cafeName') || S.siteName) + '">' +
+                  '</div>' +
+              '</div>' +
+              '<div class="settings-social-field">' +
+                  '<span class="settings-social-icon settings-social-icon--contact" aria-hidden="true">' +
+                      '<i class="fa-solid fa-phone"></i>' +
+                      '<i class="fa-brands fa-whatsapp"></i>' +
+                  '</span>' +
+                  '<div class="settings-social-input-wrap">' +
+                      '<label for="whatsappPhone">' + S.callWhatsAppNumber + '</label>' +
+                      '<input type="tel" id="whatsappPhone" value="' + (localStorage.getItem('whatsappPhone') || '9647506454656') + '" placeholder="' + S.phonePlaceholder + '">' +
+                  '</div>' +
+              '</div>' +
+              '<div class="settings-social-field">' +
+                  '<span class="settings-social-icon settings-social-icon--maps" aria-hidden="true"><i class="fa-solid fa-map-location-dot"></i></span>' +
+                  '<div class="settings-social-input-wrap">' +
+                      '<label for="cafeLocationUrl">' + S.locationMapsUrl + '</label>' +
+                      '<input type="url" id="cafeLocationUrl" value="' + (localStorage.getItem('cafeLocationUrl') || 'https://maps.app.goo.gl/mmi5iv7mnGKxKZoq9?g_st=ic') + '" placeholder="https://maps.google.com/...">' +
+                  '</div>' +
+              '</div>' +
+              '<div class="settings-social-field">' +
+                  '<span class="settings-social-icon settings-social-icon--pin" aria-hidden="true"><i class="fa-solid fa-location-dot"></i></span>' +
+                  '<div class="settings-social-input-wrap">' +
+                      '<label for="cafeLocationLabel">' + S.locationLabelField + '</label>' +
+                      '<input type="text" id="cafeLocationLabel" value="' + (localStorage.getItem('cafeLocationLabel') || 'بەحرکە-مجەمع') + '">' +
+                  '</div>' +
+              '</div>' +
+              '<div class="settings-social-field">' +
+                  '<span class="settings-social-icon settings-social-icon--currency" aria-hidden="true">' +
+                      '<img src="assets/currency-icon.png" alt="" width="28" height="28">' +
+                  '</span>' +
+                  '<div class="settings-social-input-wrap">' +
+                      '<label for="cafeCurrency">' + S.currency + '</label>' +
+                      '<input type="text" id="cafeCurrency" value="IQD" readonly>' +
+                  '</div>' +
+              '</div>' +
+              '<div class="settings-social-field settings-hours-field">' +
+                  '<span class="settings-social-icon settings-social-icon--hours" aria-hidden="true"><i class="fa-regular fa-clock"></i></span>' +
+                  '<div class="settings-social-input-wrap settings-hours-block">' +
+                      '<div class="settings-hours-row">' +
+                          '<div class="settings-hours-input">' +
+                              '<label>' + S.cafeOpenTimeLabel + '</label>' +
+                              buildCafeTimePickerMarkup('cafeOpen', openTimeStored, '14:00', S, settingsLang) +
+                          '</div>' +
+                          '<div class="settings-hours-input">' +
+                              '<label>' + S.cafeCloseTimeLabel + '</label>' +
+                              buildCafeTimePickerMarkup('cafeClose', closeTimeStored, '02:00', S, settingsLang) +
+                          '</div>' +
+                      '</div>' +
+                      '<button type="button" class="btn-primary cafe-hours-save-btn" id="saveCafeHoursBtn">' + S.saveHours + '</button>' +
+                  '</div>' +
+              '</div>' +
+          '</div>' +
+          '<div class="card settings-social-card" style="margin-top:20px;">' +
+              '<div class="settings-section-label"><i class="fa-solid fa-share-nodes" aria-hidden="true"></i> ' + S.socialLinks + '</div>' +
+              '<div class="settings-section-hint">' + S.socialLinksHint + '</div>' +
+              '<div class="settings-social-field">' +
+                  '<span class="settings-social-icon settings-social-icon--instagram" aria-hidden="true"><i class="fa-brands fa-instagram"></i></span>' +
+                  '<div class="settings-social-input-wrap">' +
+                      '<label for="cafeInstagram">' + S.instagramUrl + '</label>' +
+                      '<input type="url" id="cafeInstagram" value="' + (localStorage.getItem('cafeInstagram') || '') + '" placeholder="https://instagram.com/...">' +
+                  '</div>' +
+              '</div>' +
+              '<div class="settings-social-field">' +
+                  '<span class="settings-social-icon settings-social-icon--tiktok" aria-hidden="true"><i class="fa-brands fa-tiktok"></i></span>' +
+                  '<div class="settings-social-input-wrap">' +
+                      '<label for="cafeTiktok">' + S.tiktokUrl + '</label>' +
+                      '<input type="url" id="cafeTiktok" value="' + (localStorage.getItem('cafeTiktok') || '') + '" placeholder="https://tiktok.com/@...">' +
+                  '</div>' +
+              '</div>' +
+              '<div class="settings-social-field">' +
+                  '<span class="settings-social-icon settings-social-icon--snapchat" aria-hidden="true"><i class="fa-brands fa-snapchat"></i></span>' +
+                  '<div class="settings-social-input-wrap">' +
+                      '<label for="cafeSnapchat">' + S.snapchatUrl + '</label>' +
+                      '<input type="url" id="cafeSnapchat" value="' + (localStorage.getItem('cafeSnapchat') || '') + '" placeholder="https://snapchat.com/add/...">' +
+                  '</div>' +
+              '</div>' +
+              '<button class="btn-primary" id="saveSettingsBtn" style="margin-top:8px;">' + S.saveSettings + '</button>' +
           '</div>' +
           '<div class="card" style="margin-top:20px;">' +
               '<div class="settings-section-label">🎨 ' + TL.title + '</div>' +
               '<div class="settings-section-hint">' + TL.hint + '</div>' +
               '<div class="theme-picker" id="themePicker">' + swatchesHtml + '</div>' +
           '</div>' +
+          '<div class="card" style="margin-top:20px;">' +
+              '<div class="settings-section-label">👤 ' + (S.userRole || 'User Role') + '</div>' +
+              '<div class="settings-section-hint">' + (S.userRoleHint || 'Select your role to control access to dashboard and other features') + '</div>' +
+              '<div class="settings-social-field">' +
+                  '<span class="settings-social-icon" aria-hidden="true"><i class="fa-solid fa-user-shield"></i></span>' +
+                  '<div class="settings-social-input-wrap">' +
+                      '<label for="userRoleSelect">' + (S.selectRole || 'Select Role') + '</label>' +
+                      '<select id="userRoleSelect">' +
+                          '<option value="admin"' + (getUserRole() === 'admin' ? ' selected' : '') + '>' + (S.roleAdmin || 'Admin') + '</option>' +
+                          '<option value="owner"' + (getUserRole() === 'owner' ? ' selected' : '') + '>' + (S.roleOwner || 'Owner') + '</option>' +
+                          '<option value="staff"' + (getUserRole() === 'staff' ? ' selected' : '') + '>' + (S.roleStaff || 'Staff') + '</option>' +
+                          '<option value="cashier"' + (getUserRole() === 'cashier' ? ' selected' : '') + '>' + (S.roleCashier || 'Cashier') + '</option>' +
+                      '</select>' +
+                  '</div>' +
+              '</div>' +
+              '<button class="btn-primary" id="saveRoleBtn" style="margin-top:8px;">' + (S.saveRole || 'Save Role') + '</button>' +
+          '</div>' +
           '<div class="card" style="margin-top:20px;border:1px solid #C62828;">' +
               '<h2 style="color:#C62828;">⚠️ ' + S.resetAllData + '</h2>' +
               '<p style="margin-bottom:12px;color:#666;">' + S.resetConfirm + '</p>' +
               '<button class="btn-danger" id="resetAllDataBtn">' + S.resetAllData + '</button>' +
           '</div>';
+
+      setupCafeTimePickers(settingsLang);
 
       var themePicker = document.getElementById('themePicker');
       if (themePicker) {
@@ -2527,20 +4682,131 @@ function loadSettings() {
           });
       }
 
+      var saveRoleBtn = document.getElementById('saveRoleBtn');
+      if (saveRoleBtn) {
+          saveRoleBtn.addEventListener('click', function () {
+              var roleSelect = document.getElementById('userRoleSelect');
+              if (roleSelect) {
+                  var selectedRole = roleSelect.value;
+                  if (setUserRole(selectedRole)) {
+                      alert(S.roleSaved || 'Role saved successfully. Please refresh the page to apply changes.');
+                  }
+              }
+          });
+      }
+
       var saveBtn = document.getElementById('saveSettingsBtn');
       if (saveBtn) {
           saveBtn.addEventListener('click', function () {
               var cafeName = document.getElementById('cafeName').value.trim();
-              var whatsappPhone = document.getElementById('whatsappPhone').value.trim();
+              var whatsappPhone = typeof normalizeWhatsAppPhone === 'function'
+                  ? normalizeWhatsAppPhone(document.getElementById('whatsappPhone').value.trim())
+                  : document.getElementById('whatsappPhone').value.trim();
               var cafeLocationUrl = document.getElementById('cafeLocationUrl').value.trim();
               var cafeLocationLabel = document.getElementById('cafeLocationLabel').value.trim();
-              var cafeInstagram = document.getElementById('cafeInstagram').value.trim();
-              localStorage.setItem('cafeName', cafeName);
-              localStorage.setItem('whatsappPhone', whatsappPhone);
-              localStorage.setItem('cafeLocationUrl', cafeLocationUrl);
-              localStorage.setItem('cafeLocationLabel', cafeLocationLabel);
-              localStorage.setItem('cafeInstagram', cafeInstagram);
-              alert(S.settingsSaved);
+              var cafeInstagram = typeof normalizeSocialUrl === 'function'
+                  ? normalizeSocialUrl(document.getElementById('cafeInstagram').value.trim(), 'instagram')
+                  : document.getElementById('cafeInstagram').value.trim();
+              var cafeTiktok = typeof normalizeSocialUrl === 'function'
+                  ? normalizeSocialUrl(document.getElementById('cafeTiktok').value.trim(), 'tiktok')
+                  : document.getElementById('cafeTiktok').value.trim();
+              var cafeSnapchat = typeof normalizeSocialUrl === 'function'
+                  ? normalizeSocialUrl(document.getElementById('cafeSnapchat').value.trim(), 'snapchat')
+                  : document.getElementById('cafeSnapchat').value.trim();
+              var cafeOpenTime = readCafeTimePickerValue('cafeOpen');
+              if (!cafeOpenTime) {
+                  var openHidden = document.getElementById('cafeOpenTime');
+                  cafeOpenTime = openHidden ? openHidden.value.trim() : '14:00';
+              }
+              var cafeCloseTime = readCafeTimePickerValue('cafeClose');
+              if (!cafeCloseTime) {
+                  var closeHidden = document.getElementById('cafeCloseTime');
+                  cafeCloseTime = closeHidden ? closeHidden.value.trim() : '02:00';
+              }
+              if (typeof normalizeCafeTimeValue === 'function') {
+                  cafeOpenTime = normalizeCafeTimeValue(cafeOpenTime, '14:00');
+                  cafeCloseTime = normalizeCafeTimeValue(cafeCloseTime, '02:00');
+              }
+
+              function storeSetting(key, value) {
+                  if (value == null || String(value).trim() === '') {
+                      localStorage.removeItem(key);
+                  } else {
+                      localStorage.setItem(key, String(value).trim());
+                  }
+              }
+
+              storeSetting('cafeName', cafeName);
+              storeSetting('whatsappPhone', whatsappPhone);
+              storeSetting('cafeLocationUrl', cafeLocationUrl);
+              storeSetting('cafeLocationLabel', cafeLocationLabel);
+              storeSetting('cafeInstagram', cafeInstagram);
+              storeSetting('cafeTiktok', cafeTiktok);
+              storeSetting('cafeSnapchat', cafeSnapchat);
+              storeSetting('cafeOpenTime', cafeOpenTime);
+              storeSetting('cafeCloseTime', cafeCloseTime);
+
+              document.getElementById('whatsappPhone').value = whatsappPhone;
+              document.getElementById('cafeInstagram').value = cafeInstagram;
+              document.getElementById('cafeTiktok').value = cafeTiktok;
+              document.getElementById('cafeSnapchat').value = cafeSnapchat;
+              var selectedLang = localStorage.getItem('selectedLang') || 'ku';
+              var openHiddenSave = document.getElementById('cafeOpenTime');
+              var closeHiddenSave = document.getElementById('cafeCloseTime');
+              if (openHiddenSave) openHiddenSave.value = cafeOpenTime;
+              if (closeHiddenSave) closeHiddenSave.value = cafeCloseTime;
+              updateCafeTimePickerDisplay('cafeOpen', selectedLang);
+              updateCafeTimePickerDisplay('cafeClose', selectedLang);
+
+              var settingsPayload = {
+                  cafeName: cafeName,
+                  whatsappPhone: whatsappPhone,
+                  cafeLocationUrl: cafeLocationUrl,
+                  cafeLocationLabel: cafeLocationLabel,
+                  cafeInstagram: cafeInstagram,
+                  cafeTiktok: cafeTiktok,
+                  cafeSnapchat: cafeSnapchat,
+                  cafeOpenTime: cafeOpenTime,
+                  cafeCloseTime: cafeCloseTime
+              };
+
+              if (typeof saveCafeSettingsToFirestore === 'function') {
+                  saveCafeSettingsToFirestore(settingsPayload, function (err) {
+                      if (err) {
+                          alert(S.settingsSaved + ' (local only — cloud sync failed)');
+                      } else {
+                          alert(S.settingsSaved);
+                      }
+                  });
+              } else {
+                  alert(S.settingsSaved);
+              }
+          });
+      }
+
+      if (typeof loadCafeSettingsFromFirestore === 'function') {
+          loadCafeSettingsFromFirestore(function () {
+              var fields = {
+                  cafeName: 'cafeName',
+                  whatsappPhone: 'whatsappPhone',
+                  cafeLocationUrl: 'cafeLocationUrl',
+                  cafeLocationLabel: 'cafeLocationLabel',
+                  cafeInstagram: 'cafeInstagram',
+                  cafeTiktok: 'cafeTiktok',
+                  cafeSnapchat: 'cafeSnapchat'
+              };
+              Object.keys(fields).forEach(function (storageKey) {
+                  var input = document.getElementById(fields[storageKey]);
+                  if (!input) return;
+                  var value = localStorage.getItem(storageKey) || input.value || '';
+                  if (storageKey === 'whatsappPhone' && typeof normalizeWhatsAppPhone === 'function') {
+                      value = normalizeWhatsAppPhone(value);
+                  }
+                  input.value = value;
+              });
+              var langLoaded = localStorage.getItem('selectedLang') || 'ku';
+              syncCafeTimePickerFromStorage('cafeOpen', langLoaded);
+              syncCafeTimePickerFromStorage('cafeClose', langLoaded);
           });
       }
 
@@ -2554,65 +4820,88 @@ function resetAllData() {
      var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
      if (!confirm(S.resetConfirm)) return;
 
-     // Reset money/income only — keep menu items and categories intact.
-     var collections = ['sales', 'expenses'];
-     var promises = [];
+     if (!window.db) {
+         alert(S.resetError + 'Firestore not ready.');
+         return;
+     }
 
-     collections.forEach(function (col) {
-         var p = db.collection(col).get().then(function (snap) {
-             if (snap.empty) return Promise.resolve(0);
-             var batches = [];
-             var batch = db.batch();
-             var count = 0;
-             snap.forEach(function (doc) {
-                 batch.delete(doc.ref);
-                 count++;
-                 if (count === 500) {
-                     batches.push(batch.commit());
-                     batch = db.batch();
-                     count = 0;
-                 }
-             });
-             if (count > 0) {
-                 batches.push(batch.commit());
+     // Removed authentication check to allow anyone to reset income/expenses
+     // if (!isAdminAuthenticated()) {
+     //     alert(S.resetError + (S.loginRequired || 'Please log in again.'));
+     //     return;
+     // }
+
+     if (_adminResetInProgress) return;
+
+     var resetBtn = document.getElementById('resetAllDataBtn');
+     var resetBtnLabel = resetBtn ? resetBtn.textContent : '';
+     if (resetBtn) {
+         resetBtn.disabled = true;
+         resetBtn.textContent = S.loading || '...';
+     }
+
+     _adminResetInProgress = true;
+     stopDashboardListeners();
+
+     // Reset sales + expenses only — keep menu items and categories.
+     clearAdminSalesExpensesCache();
+     refreshAdminCurrentSection();
+
+     var collections = ['sales', 'expenses'];
+     var deleteTasks = collections.map(function (col) {
+         return deleteAdminCollectionFromServer(col).then(function (result) {
+             if (result.remaining > 0) {
+                 throw new Error(col + ': ' + result.remaining + ' documents still on server');
              }
-             return Promise.all(batches);
-         }).catch(function (e) {
-             console.error('Error deleting from ' + col + ':', e);
-             throw e;
+             return result;
          });
-         promises.push(p);
      });
 
-     Promise.all(promises).then(function () {
+     Promise.all(deleteTasks).then(function () {
+         clearAdminSalesExpensesCache();
+         try { localStorage.setItem('adminCacheWarmedAt', String(Date.now())); } catch (e) {}
+         _adminResetInProgress = false;
+         if (resetBtn) {
+             resetBtn.disabled = false;
+             resetBtn.textContent = resetBtnLabel;
+         }
          alert(S.resetSuccess);
          loadAdminSection('dashboard');
      }).catch(function (e) {
-         alert(S.resetError + (e ? e.message : ''));
+         console.error('Reset failed:', e);
+         _adminResetInProgress = false;
+         if (resetBtn) {
+             resetBtn.disabled = false;
+             resetBtn.textContent = resetBtnLabel;
+         }
+         warmAdminOfflineCache(function () {
+             startAdminLiveListeners();
+             refreshAdminCurrentSection();
+             alert(S.resetError + (e && e.message ? e.message : ''));
+         });
      });
  }
 
- /* ============ EXPENSES ============
-    All expense data is read from and written directly to Firestore.
-    Nothing financial is ever stored in localStorage/sessionStorage; the
-    list and stats stay in sync across every device via onSnapshot. */
+ /* ============ EXPENSES ============ */
+
+ function readCachedExpenses() {
+     try {
+         return JSON.parse(localStorage.getItem('cachedExpenses') || '[]').map(normalizeExpenseEntry);
+     } catch (e) {
+         return [];
+     }
+ }
+
+ function writeCachedExpenses(items) {
+     localStorage.setItem('cachedExpenses', JSON.stringify(items));
+     syncExpensesLiveFromCache();
+ }
 
  function expenseTimestampToMs(item) {
      if (!item) return 0;
-     if (item.timestampSeconds != null) return item.timestampSeconds * 1000;
-     var ts = item.timestamp;
-     if (!ts) {
-         if (item.date && item.time) {
-             var d = new Date(item.date + 'T' + item.time);
-             return isNaN(d.getTime()) ? 0 : d.getTime();
-         }
-         return 0;
-     }
-     if (typeof ts.toDate === 'function') return ts.toDate().getTime();
-     if (ts.seconds != null) return ts.seconds * 1000;
-     if (ts._seconds != null) return ts._seconds * 1000;
-     var parsed = new Date(ts);
-     return isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+     var sec = deriveExpenseTimestampSeconds(item);
+     if (sec != null) return sec * 1000;
+     return 0;
  }
 
  function expenseEntryFromDoc(doc) {
@@ -2622,14 +4911,15 @@ function resetAllData() {
      if (ts && ts.seconds != null) timestampSeconds = ts.seconds;
      else if (ts && ts._seconds != null) timestampSeconds = ts._seconds;
      else if (ts && typeof ts.toDate === 'function') timestampSeconds = Math.floor(ts.toDate().getTime() / 1000);
-     return {
+     return normalizeExpenseEntry({
          id: doc.id,
          name: exp.name,
          price: exp.price || 0,
          date: exp.date,
          time: exp.time,
+         timestamp: ts,
          timestampSeconds: timestampSeconds
-     };
+     });
  }
 
  function getExpenseMonthRange(month) {
@@ -2638,6 +4928,76 @@ function resetAllData() {
          start: new Date(year, month, 1),
          end: new Date(year, month + 1, 1)
      };
+ }
+
+ function filterExpensesByMonth(items, month) {
+     var year = new Date().getFullYear();
+     return items.filter(function (item) {
+         return isExpenseInMonth(item, month, year);
+     }).sort(function (a, b) {
+         return expenseTimestampToMs(b) - expenseTimestampToMs(a);
+     });
+ }
+
+ function filterExpensesByDay(items, dayStart) {
+     return items.filter(function (item) {
+         return isExpenseOnLocalDay(item, dayStart);
+     }).sort(function (a, b) {
+         return expenseTimestampToMs(b) - expenseTimestampToMs(a);
+     });
+ }
+
+ function upsertCachedExpense(entry) {
+     normalizeExpenseEntry(entry);
+     var items = readCachedExpenses();
+     var idx = -1;
+     for (var i = 0; i < items.length; i++) {
+         if (items[i].id === entry.id) { idx = i; break; }
+     }
+     if (idx >= 0) items[idx] = entry;
+     else items.push(entry);
+     writeCachedExpenses(items);
+ }
+
+ function removeCachedExpense(id) {
+     writeCachedExpenses(readCachedExpenses().filter(function (e) { return e.id !== id; }));
+ }
+
+ function mergeExpensesSnapIntoCache(snap) {
+     if (!snap || snap.empty) return;
+     var all = readCachedExpenses();
+     snap.forEach(function (doc) {
+         var entry = expenseEntryFromDoc(doc);
+         var found = false;
+         for (var i = 0; i < all.length; i++) {
+             if (all[i].id === entry.id) { all[i] = entry; found = true; break; }
+         }
+         if (!found) all.push(entry);
+     });
+     writeCachedExpenses(all);
+ }
+
+ function paintExpensesStatsFromCache(month) {
+     if (month === undefined || month === null) month = new Date().getMonth();
+     var year = new Date().getFullYear();
+     var today = new Date();
+     today.setHours(0, 0, 0, 0);
+     var tomorrow = new Date(today);
+     tomorrow.setDate(tomorrow.getDate() + 1);
+     var mStart = new Date(year, month, 1);
+     var mEnd = new Date(year, month + 1, 1);
+
+     var todayTotal = sumExpensesInRange(today, tomorrow);
+     var monthItems = filterExpensesByMonth(readCachedExpenses(), month);
+     var monthTotal = 0;
+     monthItems.forEach(function (e) { monthTotal += e.price || 0; });
+
+     var el = document.getElementById('expTodayTotal');
+     if (el) el.textContent = todayTotal.toLocaleString() + ' IQD';
+     var elM = document.getElementById('expMonthTotal');
+     if (elM) elM.textContent = monthTotal.toLocaleString() + ' IQD';
+     var elC = document.getElementById('expCount');
+     if (elC) elC.textContent = monthItems.length.toString();
  }
 
  function renderExpensesList(month, items) {
@@ -2653,41 +5013,81 @@ function resetAllData() {
          return;
      }
 
-     var total = 0;
-     var rows = '';
-     items.forEach(function (item) {
-         total += (item.price || 0);
-         var ms = expenseTimestampToMs(item);
-         var dateObj = ms ? new Date(ms) : null;
-         var dateStr = dateObj ? dateObj.toLocaleDateString('ku-IQ') : (item.date || '—');
-         var timeStr = dateObj ? dateObj.toLocaleTimeString('ku-IQ', { hour: '2-digit', minute: '2-digit' }) : (item.time || '');
-         rows += '<tr class="expense-row">' +
-             '<td class="expense-cell expense-cell--name"><span class="expense-name">' + (item.name || '—') + '</span></td>' +
-             '<td class="expense-cell expense-cell--price"><span class="expense-price">' + (item.price || 0).toLocaleString() + ' IQD</span></td>' +
-             '<td class="expense-cell expense-cell--date"><span class="expense-date">' + dateStr + '</span><span class="expense-time">' + timeStr + '</span></td>' +
-             '<td class="expense-cell expense-cell--actions">' +
-                 '<button class="btn-danger btn-sm delete-expense" data-id="' + item.id + '">✕</button>' +
-             '</td>' +
-         '</tr>';
-     });
+     var now = new Date();
+     var isCurrentMonth = month === now.getMonth() && now.getFullYear() === new Date().getFullYear();
+     var todayStart = new Date();
+     todayStart.setHours(0, 0, 0, 0);
+     var todayItems = isCurrentMonth ? filterExpensesByDay(items, todayStart) : [];
+     var todayIds = {};
+     todayItems.forEach(function (e) { todayIds[e.id] = true; });
+     var monthRest = isCurrentMonth ? items.filter(function (e) { return !todayIds[e.id]; }) : items;
 
-     list.innerHTML = '<div class="expenses-table-wrapper">' +
-         '<table class="expenses-table">' +
-             '<thead><tr>' +
-                 '<th>' + S.expenseName + '</th>' +
-                 '<th>' + S.expensePrice + '</th>' +
-                 '<th>' + S.expenseDate + '</th>' +
-                 '<th></th>' +
-             '</tr></thead>' +
-             '<tbody>' + rows + '</tbody>' +
-             '<tfoot><tr>' +
-                 '<td colspan="4" class="expense-total-cell">' +
-                     '<span class="expense-total-label">' + S.totalExpenses + ':</span>' +
-                     '<span class="expense-total-value">' + total.toLocaleString() + ' IQD</span>' +
+     function buildRows(listItems) {
+         var total = 0;
+         var rows = '';
+         listItems.forEach(function (item) {
+             total += (item.price || 0);
+             var ms = expenseTimestampToMs(item);
+             var dateObj = ms ? new Date(ms) : null;
+             var dateStr = dateObj ? dateObj.toLocaleDateString('ku-IQ') : (item.date || '—');
+             var timeStr = dateObj ? dateObj.toLocaleTimeString('ku-IQ', { hour: '2-digit', minute: '2-digit', hour12: true }) : (item.time || '');
+             rows += '<tr class="expense-row">' +
+                 '<td class="expense-cell expense-cell--name"><span class="expense-name">' + (item.name || '—') + '</span></td>' +
+                 '<td class="expense-cell expense-cell--price"><span class="expense-price">' + (item.price || 0).toLocaleString() + ' IQD</span></td>' +
+                 '<td class="expense-cell expense-cell--date"><span class="expense-date">' + dateStr + '</span><span class="expense-time">' + timeStr + '</span></td>' +
+                 '<td class="expense-cell expense-cell--actions">' +
+                     '<button type="button" class="btn-primary btn-sm edit-expense" data-id="' + item.id + '" title="' + S.edit + '">✎</button> ' +
+                     '<button type="button" class="btn-danger btn-sm delete-expense" data-id="' + item.id + '">✕</button>' +
                  '</td>' +
-             '</tr></tfoot>' +
-         '</table></div>';
+             '</tr>';
+         });
+         return { rows: rows, total: total };
+     }
 
+     function buildTable(title, listItems) {
+         if (!listItems.length) return '';
+         var built = buildRows(listItems);
+         return (title ? '<h3 class="expenses-day-heading">' + title + '</h3>' : '') +
+             '<div class="expenses-table-wrapper">' +
+             '<table class="expenses-table">' +
+                 '<thead><tr>' +
+                     '<th>' + S.expenseName + '</th>' +
+                     '<th>' + S.expensePrice + '</th>' +
+                     '<th>' + S.expenseDate + '</th>' +
+                     '<th></th>' +
+                 '</tr></thead>' +
+                 '<tbody>' + built.rows + '</tbody>' +
+                 '<tfoot><tr>' +
+                     '<td colspan="4" class="expense-total-cell">' +
+                         '<span class="expense-total-label">' + S.totalExpenses + ':</span>' +
+                         '<span class="expense-total-value">' + built.total.toLocaleString() + ' IQD</span>' +
+                     '</td>' +
+                 '</tr></tfoot>' +
+             '</table></div>';
+     }
+
+     var html = '';
+     if (todayItems.length) {
+         html += buildTable(S.todayExpenses, todayItems);
+     }
+     if (monthRest.length) {
+         html += buildTable(todayItems.length ? (S.monthlyExpenses || S.expenses) : '', monthRest);
+     }
+     if (!html) {
+         list.innerHTML = '<div class="expenses-empty">' +
+             '<div class="expenses-empty-icon">📭</div>' +
+             '<p>' + S.noExpenses + '</p>' +
+         '</div>';
+         return;
+     }
+
+     list.innerHTML = html;
+
+     list.querySelectorAll('.edit-expense').forEach(function (btn) {
+         btn.addEventListener('click', function () {
+             editExpense(this.getAttribute('data-id'));
+         });
+     });
      list.querySelectorAll('.delete-expense').forEach(function (btn) {
          btn.addEventListener('click', function () {
              deleteExpense(this.getAttribute('data-id'));
@@ -2696,6 +5096,12 @@ function resetAllData() {
  }
 
  function loadExpenses() {
+     // Force refresh from server to ensure cross-device sync
+     syncAdminFinancialsFromServer(function() {
+         // After server sync, render expenses with fresh data
+         renderExpensesUI(getExpensesMonth());
+     });
+     
      var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
      var adminContent = document.getElementById('adminContent');
      var now = new Date();
@@ -2743,7 +5149,7 @@ function resetAllData() {
                  '</div>' +
              '</div>' +
              '<div class="expenses-table-container">' +
-                 '<div id="expensesList"><div class="loading">Loading...</div></div>' +
+                 '<div id="expensesList"></div>' +
              '</div>' +
          '</div>' +
          '<div id="expenseModal" class="modal-overlay">' +
@@ -2751,10 +5157,10 @@ function resetAllData() {
                  '<div class="modal-content">' +
                      '<span class="modal-close" id="expenseModalClose">&times;</span>' +
                      '<h2 id="expenseModalTitle">' + S.addExpense + '</h2>' +
-                     '<form id="expenseForm">' +
+                     '<form id="expenseForm" novalidate>' +
                          '<div class="form-group">' +
                              '<label>' + S.expenseName + '</label>' +
-                             '<input type="text" id="expenseName" list="expenseSuggestions" required>' +
+                             '<input type="text" id="expenseName" list="expenseSuggestions" autocomplete="off">' +
                              '<datalist id="expenseSuggestions">' +
                                  '<option value="' + S.water + '">' +
                                  '<option value="' + S.milk + '">' +
@@ -2769,18 +5175,18 @@ function resetAllData() {
                          '<div class="form-row">' +
                              '<div class="form-group">' +
                                  '<label>' + S.expensePrice + '</label>' +
-                                 '<input type="number" id="expensePrice" min="0" required>' +
+                                 '<input type="text" inputmode="decimal" id="expensePrice" min="0" autocomplete="off">' +
                              '</div>' +
                              '<div class="form-group">' +
                                  '<label>' + S.expenseDate + '</label>' +
-                                 '<input type="date" id="expenseDate" required>' +
+                                 '<input type="date" id="expenseDate">' +
                              '</div>' +
                          '</div>' +
                          '<div class="form-group">' +
                              '<label>' + S.expenseTime + '</label>' +
-                             '<input type="time" id="expenseTime" required>' +
+                             '<input type="time" id="expenseTime">' +
                          '</div>' +
-                         '<button type="submit" class="btn-primary">' + S.saveItem + '</button>' +
+                         '<button type="button" class="btn-primary" id="saveExpenseBtn">' + S.saveItem + '</button>' +
                          '<button type="button" class="btn-secondary" id="cancelExpenseBtn" style="margin-left:8px;">' + S.cancel + '</button>' +
                          '<input type="hidden" id="expenseId" value="">' +
                      '</form>' +
@@ -2791,9 +5197,7 @@ function resetAllData() {
      var monthSelect = document.getElementById('expensesMonthSelect');
      if (monthSelect) {
          monthSelect.addEventListener('change', function () {
-             var m = parseInt(this.value, 10);
-             loadExpensesStats(m);
-             loadExpensesList(m);
+             renderExpensesUI(parseInt(this.value, 10));
          });
      }
 
@@ -2803,7 +5207,7 @@ function resetAllData() {
              document.getElementById('expenseModalTitle').textContent = S.addExpense;
              document.getElementById('expenseForm').reset();
              document.getElementById('expenseId').value = '';
-             var today = new Date().toISOString().split('T')[0];
+             var today = getLocalDateKey(new Date());
              var now = new Date().toTimeString().slice(0, 5);
              document.getElementById('expenseDate').value = today;
              document.getElementById('expenseTime').value = now;
@@ -2826,90 +5230,94 @@ function resetAllData() {
      }
 
      var form = document.getElementById('expenseForm');
+     function triggerSaveExpense() {
+         try { saveExpense(); } catch (err) {
+             console.error('saveExpense error:', err);
+             alert(S.itemSyncFailed + (err && err.message ? '\n' + err.message : ''));
+         }
+     }
      if (form) {
          form.addEventListener('submit', function (e) {
              e.preventDefault();
-             saveExpense();
+             triggerSaveExpense();
+         });
+     }
+     var saveExpenseBtn = document.getElementById('saveExpenseBtn');
+     if (saveExpenseBtn) {
+         saveExpenseBtn.addEventListener('click', function (e) {
+             e.preventDefault();
+             triggerSaveExpense();
          });
      }
 
-     loadExpensesStats(currentMonth);
-     loadExpensesList(currentMonth);
+     renderExpensesUI(currentMonth);
+     startAdminLiveListeners();
  }
 
- /* Live "today" stat — independent of the month filter, shared by every
-    authorized device via onSnapshot. No uid filter: every expense for the
-    cafe counts, regardless of who created it. */
- function loadExpensesStats(month) {
-     if (!window.db) return;
+ function renderExpensesUI(month) {
+     if (month === undefined || month === null) month = new Date().getMonth();
+     var year = new Date().getFullYear();
      var today = new Date();
      today.setHours(0, 0, 0, 0);
      var tomorrow = new Date(today);
      tomorrow.setDate(tomorrow.getDate() + 1);
+     var mStart = new Date(year, month, 1);
+     var mEnd = new Date(year, month + 1, 1);
+     var todayMs = today.getTime();
+     var tomorrowMs = tomorrow.getTime();
+     var startMs = mStart.getTime();
+     var endMs = mEnd.getTime();
 
-     if (expensesTodayUnsubscribe) {
-         try { expensesTodayUnsubscribe(); } catch (e) {}
-         expensesTodayUnsubscribe = null;
-     }
+     var all = readCachedExpenses();
+     var monthItems = filterExpensesByMonth(all, month);
+     var todayTotal = 0;
+     var monthTotal = 0;
+     all.forEach(function (e) {
+         if (isExpenseOnLocalDay(e, today)) todayTotal += e.price || 0;
+         if (isExpenseInMonth(e, month, year)) monthTotal += e.price || 0;
+     });
 
-     expensesTodayUnsubscribe = db.collection('expenses')
-         .where('timestamp', '>=', today)
-         .where('timestamp', '<', tomorrow)
-         .onSnapshot(function (snap) {
-             var total = 0;
-             snap.forEach(function (d) { total += (d.data().price || 0); });
-             var el = document.getElementById('expTodayTotal');
-             if (el) el.textContent = total.toLocaleString() + ' IQD';
-         }, function (e) {
-             console.error('Today expenses listener error:', e);
-         });
+     var el = document.getElementById('expTodayTotal');
+     if (el) el.textContent = todayTotal.toLocaleString() + ' IQD';
+     var elM = document.getElementById('expMonthTotal');
+     if (elM) elM.textContent = monthTotal.toLocaleString() + ' IQD';
+     var elC = document.getElementById('expCount');
+     if (elC) elC.textContent = monthItems.length.toString();
+
+     renderExpensesList(month, monthItems);
  }
 
- /* Live month list + totals — reads straight from Firestore and re-renders
-    automatically on every add/edit/delete from any device. Nothing is
-    cached in localStorage/sessionStorage. */
+ function loadExpensesStats(month) {
+     renderExpensesUI(month);
+ }
+
  function loadExpensesList(month) {
-     if (month === undefined || month === null) month = new Date().getMonth();
-     var list = document.getElementById('expensesList');
-     if (!list) return;
+     renderExpensesUI(month);
+ }
+
+ function editExpense(expenseId) {
      var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
+     var expense = readCachedExpenses().filter(function (e) { return e.id === expenseId; })[0];
+     if (!expense) return;
 
-     list.innerHTML = '<div class="loading">Loading...</div>';
+     document.getElementById('expenseModalTitle').textContent = S.editExpense || S.editItem;
+     document.getElementById('expenseId').value = expense.id;
+     document.getElementById('expenseName').value = expense.name || '';
+     document.getElementById('expensePrice').value = expense.price != null ? expense.price : '';
 
-     if (!window.db) {
-         renderExpensesList(month, []);
-         return;
+     var dateVal = expense.date || '';
+     var timeVal = expense.time || '';
+     if (!dateVal || !timeVal) {
+         var ms = expenseTimestampToMs(expense);
+         if (ms) {
+             var d = new Date(ms);
+             dateVal = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+             timeVal = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+         }
      }
-
-     if (expensesMonthUnsubscribe) {
-         try { expensesMonthUnsubscribe(); } catch (e) {}
-         expensesMonthUnsubscribe = null;
-     }
-
-     var range = getExpenseMonthRange(month);
-     expensesMonthUnsubscribe = db.collection('expenses')
-         .where('timestamp', '>=', range.start)
-         .where('timestamp', '<', range.end)
-         .onSnapshot(function (snap) {
-             var monthEntries = [];
-             var monthTotal = 0;
-             snap.forEach(function (doc) {
-                 var entry = expenseEntryFromDoc(doc);
-                 monthEntries.push(entry);
-                 monthTotal += (entry.price || 0);
-             });
-             monthEntries.sort(function (a, b) {
-                 return expenseTimestampToMs(b) - expenseTimestampToMs(a);
-             });
-             renderExpensesList(month, monthEntries);
-             var elM = document.getElementById('expMonthTotal');
-             if (elM) elM.textContent = monthTotal.toLocaleString() + ' IQD';
-             var elC = document.getElementById('expCount');
-             if (elC) elC.textContent = monthEntries.length.toString();
-         }, function (e) {
-             console.error('Error loading expenses:', e);
-             list.innerHTML = '<div class="expenses-empty"><p style="color:#C62828;">' + S.errorPrefix + e.message + '</p></div>';
-         });
+     document.getElementById('expenseDate').value = dateVal;
+     document.getElementById('expenseTime').value = timeVal;
+     document.getElementById('expenseModal').classList.add('active');
  }
 
  function saveExpense() {
@@ -2935,50 +5343,109 @@ function resetAllData() {
      var monthSelect = document.getElementById('expensesMonthSelect');
      if (monthSelect) monthSelect.value = String(expenseMonth);
 
-     document.getElementById('expenseModal').classList.remove('active');
+     var tempId = expenseId || ('local-' + Date.now());
+     var cacheEntry = {
+         id: tempId,
+         name: name,
+         price: parseFloat(price) || 0,
+         date: date,
+         time: time,
+         timestampSeconds: Math.floor(dateTime.getTime() / 1000),
+         user_id: (window.auth && auth.currentUser) ? auth.currentUser.uid : null,
+         user_email: (window.auth && auth.currentUser) ? auth.currentUser.email : null
+     };
+     upsertCachedExpense(cacheEntry);
+     syncExpensesLiveFromCache();
 
-     /* The expense belongs to the whole cafe, not to whoever entered it —
-        uid is stored only as a "who created this" field, never used to
-        filter what anyone sees. */
+     document.getElementById('expenseModal').classList.remove('active');
+     renderExpensesUI(expenseMonth);
+     
+     // Force dashboard refresh with expenses
+     if (document.getElementById('todaySales')) {
+         syncExpensesLiveFromCache();
+         renderDashboardUI(getDashboardMonth());
+     }
+
+     if (!window.db) {
+         alert(S.expenseSavedOffline || S.expenseSaved);
+         return;
+     }
+
      var expenseData = {
          name: name,
          price: parseFloat(price) || 0,
          date: date,
          time: time,
          timestamp: firebase.firestore.Timestamp.fromDate(dateTime),
-         created_at: firebase.firestore.FieldValue.serverTimestamp(),
-         createdBy: (window.auth && auth.currentUser) ? auth.currentUser.uid : null
+         updated_at: firebase.firestore.FieldValue.serverTimestamp()
      };
 
+     var isLocalId = expenseId && String(expenseId).indexOf('local-') === 0;
+     var isServerUpdate = expenseId && !isLocalId;
+
+     if (!isServerUpdate) {
+         expenseData.created_at = firebase.firestore.FieldValue.serverTimestamp();
+     }
+
      var promise;
-     if (expenseId) {
+     if (isServerUpdate) {
          promise = db.collection('expenses').doc(expenseId).update(expenseData);
      } else {
          promise = db.collection('expenses').add(expenseData);
      }
 
-     /* All connected admin screens — including this one — pick up the
-        change through the live onSnapshot listeners above, so there is
-        nothing further to render manually here. */
-     applyWrite(promise, function () {
-         alert(S.expenseSaved);
-     }, function (err) {
-         console.error('Expense save sync error:', err);
+     console.log('[expense] Writing expense to Firestore:', name, 'price:', price);
+     applyWrite(promise, function (offline) {
+         console.log('[expense] Expense written successfully, offline:', offline);
+         alert(offline ? (S.expenseSavedOffline || S.expenseSaved) : S.expenseSaved);
      });
+
+     if (promise && typeof promise.then === 'function') {
+         promise.then(function (ref) {
+             if (!isServerUpdate && ref && ref.id) {
+                 if (isLocalId) removeCachedExpense(expenseId);
+                 else if (!expenseId) removeCachedExpense(tempId);
+                 upsertCachedExpense(Object.assign({}, cacheEntry, { id: ref.id }));
+                 syncExpensesLiveFromCache();
+             }
+             renderExpensesUI(expenseMonth);
+             if (document.getElementById('todaySales')) renderDashboardUI(getDashboardMonth());
+         }).catch(function (err) {
+             console.error('Expense save sync error:', err);
+         });
+     }
  }
 
  function deleteExpense(expenseId) {
      var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
      if (!confirm(S.deleteExpenseConfirm)) return;
 
-     applyWrite(db.collection('expenses').doc(expenseId).delete(), function () {
+     removeCachedExpense(expenseId);
+     syncExpensesLiveFromCache();
+     var monthSelect = document.getElementById('expensesMonthSelect');
+     var month = monthSelect ? parseInt(monthSelect.value, 10) : new Date().getMonth();
+     renderExpensesUI(month);
+     
+     // Force dashboard refresh with expenses
+     if (document.getElementById('todaySales')) {
+         syncExpensesLiveFromCache();
+         renderDashboardUI(getDashboardMonth());
+     }
+
+     if (!window.db || String(expenseId).indexOf('local-') === 0) {
          alert(S.expenseDeleted);
+         return;
+     }
+
+     applyWrite(db.collection('expenses').doc(expenseId).delete(), function (offline) {
+         alert(offline ? (S.expenseDeletedOffline || S.expenseDeleted) : S.expenseDeleted);
      });
  }
 
  /* ============ LOGOUT ============ */
 
 function handleLogout() {
+    stopDashboardListeners();
     if (window.auth) {
         auth.signOut().then(function () {
             window.location.href = 'login.html';
