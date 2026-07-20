@@ -835,9 +835,6 @@ function startAdminLiveListeners() {
         console.log('[live] Sales snapshot received, docs:', snap.size);
         if (_adminResetInProgress) return;
         if (snap.empty) {
-            _adminSalesLive = _adminSalesLive.filter(function (s) {
-                return String(s.id).indexOf('local-') === 0;
-            });
             refreshAdminCurrentSection();
             return;
         }
@@ -854,9 +851,6 @@ function startAdminLiveListeners() {
         console.log('[live] Expenses snapshot received, docs:', snap.size);
         if (_adminResetInProgress) return;
         if (snap.empty) {
-            _adminExpensesLive = _adminExpensesLive.filter(function (e) {
-                return String(e.id).indexOf('local-') === 0;
-            });
             refreshAdminCurrentSection();
             return;
         }
@@ -3606,54 +3600,47 @@ function wireCashierEvents() {
 function recordCashierSale(items) {
     if (!items || items.length === 0) return null;
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
+    if (!window.db) {
+        alert(S.itemSyncFailed + '\nFirestore not ready');
+        return null;
+    }
     var total = items.reduce(function (s, i) { return s + i.price * i.quantity; }, 0);
     var now = new Date();
-    var cacheEntry = {
+    var cashierName = (window.auth && auth.currentUser) ? auth.currentUser.email : S.unknown;
+    var docId = db.collection('sales').doc().id;
+    var saleData = {
+        id: docId,
         items: items.map(function (i) { return { name: i.name, price: i.price, quantity: i.quantity }; }),
-        total: total,
-        timestampSeconds: Math.floor(now.getTime() / 1000),
-        cashier: (window.auth && auth.currentUser) ? auth.currentUser.email : S.unknown
-    };
-
-    var saleWrite = db.collection('sales').add({
-        items: cacheEntry.items,
         total: total,
         timestamp: firebase.firestore.Timestamp.fromDate(now),
         created_at: firebase.firestore.FieldValue.serverTimestamp(),
         createdBy: (window.auth && auth.currentUser) ? auth.currentUser.uid : null,
-        cashier: cacheEntry.cashier
-    });
+        cashier: cashierName
+    };
+    var saleWrite = db.collection('sales').doc(docId).set(saleData);
     console.log('[sale] Writing sale to Firestore, total:', total);
     applyWrite(saleWrite, function () {
-        console.log('[sale] Sale written successfully');
+        console.log('[sale] Sale queued successfully');
         orderItems.length = 0;
         updateOrderDisplay();
+    }, function (err) {
+        console.error('[sale] Write FAILED:', err);
+        alert(S.itemSyncFailed + '\n' + (err && err.message ? err.message : err));
     });
-    saleWrite.then(function (ref) {
-        if (ref && ref.id) {
-            var entry = {
-                id: ref.id,
-                items: cacheEntry.items,
-                total: total,
-                timestampSeconds: Math.floor(now.getTime() / 1000),
-                cashier: cacheEntry.cashier
-            };
-            var exists = false;
-            for (var i = 0; i < _adminSalesLive.length; i++) {
-                if (_adminSalesLive[i].id === entry.id) {
-                    exists = true;
-                    break;
-                }
-            }
-            if (!exists) {
-                _adminSalesLive.unshift(entry);
-            }
-            refreshDashboardUI(getDashboardMonth());
-            renderRecentSalesUI();
-        }
-    }).catch(function (err) {
-        console.error('Sale write error:', err);
-    });
+    var entry = {
+        id: docId,
+        items: saleData.items,
+        total: total,
+        timestampSeconds: Math.floor(now.getTime() / 1000),
+        cashier: cashierName
+    };
+    var exists = false;
+    for (var i = 0; i < _adminSalesLive.length; i++) {
+        if (_adminSalesLive[i].id === docId) { exists = true; break; }
+    }
+    if (!exists) _adminSalesLive.unshift(entry);
+    refreshDashboardUI(getDashboardMonth());
+    renderRecentSalesUI();
     return total;
 }
 
@@ -5172,6 +5159,10 @@ function editExpense(expenseId) {
 
 function saveExpense() {
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
+    if (!window.db) {
+        alert(S.itemSyncFailed + '\nFirestore not ready');
+        return;
+    }
     var name = document.getElementById('expenseName').value.trim();
     var price = document.getElementById('expensePrice').value.trim();
     var date = document.getElementById('expenseDate').value;
@@ -5182,7 +5173,7 @@ function saveExpense() {
         return;
     }
 
-    var expenseId = document.getElementById('expenseId').value;
+    var editingId = document.getElementById('expenseId').value;
     var dateTime = new Date(date + 'T' + time);
     if (isNaN(dateTime.getTime())) {
         alert(S.fillAll);
@@ -5193,7 +5184,9 @@ function saveExpense() {
     var monthSelect = document.getElementById('expensesMonthSelect');
     if (monthSelect) monthSelect.value = String(expenseMonth);
 
+    var docId = editingId || db.collection('expenses').doc().id;
     var expenseData = {
+        id: docId,
         name: name,
         price: parseFloat(price) || 0,
         date: date,
@@ -5202,63 +5195,46 @@ function saveExpense() {
         updated_at: firebase.firestore.FieldValue.serverTimestamp(),
         createdBy: (window.auth && auth.currentUser) ? auth.currentUser.uid : null
     };
-
-    if (!expenseId) {
+    if (!editingId) {
         expenseData.created_at = firebase.firestore.FieldValue.serverTimestamp();
     }
 
     var promise;
-    if (expenseId) {
-        promise = db.collection('expenses').doc(expenseId).update(expenseData);
+    if (editingId) {
+        promise = db.collection('expenses').doc(editingId).set(expenseData, { merge: true });
     } else {
-        promise = db.collection('expenses').add(expenseData);
+        promise = db.collection('expenses').doc(docId).set(expenseData);
     }
 
     var entry = {
-        id: expenseId || ('local-' + Date.now()),
+        id: docId,
         name: name,
         price: parseFloat(price) || 0,
         date: date,
         time: time,
         timestampSeconds: Math.floor(dateTime.getTime() / 1000)
     };
-    if (expenseId) {
-        for (var i = 0; i < _adminExpensesLive.length; i++) {
-            if (_adminExpensesLive[i].id === expenseId) {
-                _adminExpensesLive[i] = entry;
-                break;
-            }
+    var replaced = false;
+    for (var i = 0; i < _adminExpensesLive.length; i++) {
+        if (_adminExpensesLive[i].id === docId) {
+            _adminExpensesLive[i] = entry;
+            replaced = true;
+            break;
         }
-    } else {
-        _adminExpensesLive.unshift(entry);
     }
+    if (!replaced) _adminExpensesLive.unshift(entry);
     renderExpensesUI(expenseMonth);
     renderDashboardUI(getDashboardMonth());
 
-    console.log('[expense] Writing expense to Firestore:', name, 'price:', price);
+    console.log('[expense] Writing expense to Firestore:', docId, name, 'price:', price);
     applyWrite(promise, function (offline) {
-        console.log('[expense] Expense written successfully, offline:', offline);
+        console.log('[expense] Expense queued, offline:', offline);
         alert(offline ? (S.expenseSavedOffline || S.expenseSaved) : S.expenseSaved);
-    });
-    promise.then(function (ref) {
-        if (ref && ref.id && !expenseId) {
-            for (var j = _adminExpensesLive.length - 1; j >= 0; j--) {
-                if (_adminExpensesLive[j].id === ref.id) {
-                    _adminExpensesLive.splice(j, 1);
-                    break;
-                }
-            }
-            for (var k = 0; k < _adminExpensesLive.length; k++) {
-                if (_adminExpensesLive[k].id === entry.id) {
-                    _adminExpensesLive[k].id = ref.id;
-                    break;
-                }
-            }
-            renderExpensesUI(expenseMonth);
-            renderDashboardUI(getDashboardMonth());
-        }
-    }).catch(function (err) {
-        console.error('Expense write error:', err);
+        var modal = document.getElementById('expenseModal');
+        if (modal) modal.classList.remove('active');
+    }, function (err) {
+        console.error('[expense] Write FAILED:', err);
+        alert(S.itemSyncFailed + '\n' + (err && err.message ? err.message : err));
     });
 }
 
