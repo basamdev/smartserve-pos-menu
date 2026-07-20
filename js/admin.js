@@ -117,26 +117,41 @@ function getCachedSales() {
 function saleTimestampToMs(item) {
     if (!item) return 0;
     var sec = item.timestampSeconds;
-    if (sec != null && !isNaN(sec)) return sec * 1000;
-    var ts = item.timestamp;
-    if (!ts) return 0;
-    if (typeof ts === 'number') return ts;
-    if (typeof ts === 'string') {
-        var parsed = new Date(ts);
-        return isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+    if (sec != null && !isNaN(parseFloat(sec))) {
+        return parseFloat(sec) * 1000;
     }
-    if (typeof ts.toDate === 'function') return ts.toDate().getTime();
-    if (ts.seconds != null) return ts.seconds * 1000;
-    if (ts._seconds != null) return ts._seconds * 1000;
-    parsed = new Date(ts);
-    return isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+    var ts = item.timestamp;
+    if (ts != null) {
+        if (typeof ts === 'number') {
+            return ts;
+        }
+        if (typeof ts === 'string') {
+            var parsed = new Date(ts);
+            if (!isNaN(parsed.getTime())) return parsed.getTime();
+        }
+        if (typeof ts.toDate === 'function') {
+            return ts.toDate().getTime();
+        }
+        if (ts.seconds != null) {
+            return ts.seconds * 1000;
+        }
+        if (ts._seconds != null) {
+            return ts._seconds * 1000;
+        }
+        if (ts instanceof Date) {
+            return ts.getTime();
+        }
+        parsed = new Date(ts);
+        if (!isNaN(parsed.getTime())) return parsed.getTime();
+    }
+    return 0;
 }
 
 function saleEntryFromDoc(doc) {
     var s = doc.data();
     var ts = s.timestamp;
     var timestampSeconds = null;
-    if (ts) {
+    if (ts != null) {
         if (typeof ts === 'number') {
             timestampSeconds = Math.floor(ts / 1000);
         } else if (typeof ts === 'string') {
@@ -150,7 +165,16 @@ function saleEntryFromDoc(doc) {
             timestampSeconds = Math.floor(ts.toDate().getTime() / 1000);
         } else if (ts instanceof Date) {
             timestampSeconds = Math.floor(ts.getTime() / 1000);
+        } else {
+            parsed = new Date(ts);
+            if (!isNaN(parsed.getTime())) timestampSeconds = Math.floor(parsed.getTime() / 1000);
         }
+    }
+    if (timestampSeconds == null && ts != null) {
+        try {
+            var d = new Date(ts);
+            if (!isNaN(d.getTime())) timestampSeconds = Math.floor(d.getTime() / 1000);
+        } catch (e) {}
     }
     return {
         id: doc.id,
