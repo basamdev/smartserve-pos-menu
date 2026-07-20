@@ -116,13 +116,19 @@ function getCachedSales() {
 
 function saleTimestampToMs(item) {
     if (!item) return 0;
-    if (item.timestampSeconds != null) return item.timestampSeconds * 1000;
+    var sec = item.timestampSeconds;
+    if (sec != null && !isNaN(sec)) return sec * 1000;
     var ts = item.timestamp;
     if (!ts) return 0;
+    if (typeof ts === 'number') return ts;
+    if (typeof ts === 'string') {
+        var parsed = new Date(ts);
+        return isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+    }
     if (typeof ts.toDate === 'function') return ts.toDate().getTime();
     if (ts.seconds != null) return ts.seconds * 1000;
     if (ts._seconds != null) return ts._seconds * 1000;
-    var parsed = new Date(ts);
+    parsed = new Date(ts);
     return isNaN(parsed.getTime()) ? 0 : parsed.getTime();
 }
 
@@ -130,9 +136,16 @@ function saleEntryFromDoc(doc) {
     var s = doc.data();
     var ts = s.timestamp;
     var timestampSeconds = null;
-    if (ts && ts.seconds != null) timestampSeconds = ts.seconds;
-    else if (ts && ts._seconds != null) timestampSeconds = ts._seconds;
-    else if (ts && typeof ts.toDate === 'function') timestampSeconds = Math.floor(ts.toDate().getTime() / 1000);
+    if (ts) {
+        if (ts.seconds != null) timestampSeconds = ts.seconds;
+        else if (ts._seconds != null) timestampSeconds = ts._seconds;
+        else if (typeof ts.toDate === 'function') timestampSeconds = Math.floor(ts.toDate().getTime() / 1000);
+        else if (typeof ts === 'number') timestampSeconds = Math.floor(ts / 1000);
+        else if (typeof ts === 'string') {
+            var parsed = new Date(ts);
+            if (!isNaN(parsed.getTime())) timestampSeconds = Math.floor(parsed.getTime() / 1000);
+        }
+    }
     return {
         id: doc.id,
         items: s.items || [],
