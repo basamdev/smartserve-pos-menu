@@ -763,9 +763,11 @@ function syncAdminFinancialsFromServer(callback) {
     console.log('[sync] Starting financial sync from server');
     if (!isAdminAuthenticated() || !navigator.onLine) {
         console.log('[sync] Skipping sync - not authenticated or offline');
+        showSyncStatus('Cannot sync: ' + (!navigator.onLine ? 'device is offline' : 'not signed in'), true);
         if (typeof callback === 'function') callback();
         return Promise.resolve();
     }
+    showSyncStatus('Syncing with server…', false);
     
     return Promise.all([
         db.collection('sales').get({ source: 'server' }),
@@ -781,9 +783,11 @@ function syncAdminFinancialsFromServer(callback) {
         
         refreshAdminCurrentSection();
         console.log('[sync] Financial sync complete');
+        showSyncStatus('Synced with server', false);
         if (typeof callback === 'function') callback();
     }).catch(function (err) {
         console.warn('[sync] financials:', err && err.message ? err.message : err);
+        showSyncStatus('Sync failed: ' + (err && err.message ? err.message : err), true);
         if (typeof callback === 'function') callback();
     });
 }
@@ -1347,6 +1351,7 @@ function loadDashboard() {
     }
 
     startAdminLiveListeners();
+    showSyncStatus('Syncing with server…', false);
     syncAdminFinancialsFromServer(function () {
         renderDashboardUI(currentMonth);
         renderRecentSalesUI();
@@ -2488,6 +2493,25 @@ function applyWrite(promise, onDone, onError, options) {
     });
 }
 
+function showSyncStatus(msg, isError) {
+    var el = document.getElementById('syncStatusBanner');
+    if (!el) {
+        el = document.createElement('div');
+        el.id = 'syncStatusBanner';
+        el.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:10000;padding:9px 14px;font-size:13px;font-weight:600;color:#fff;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,.25);';
+        document.body.appendChild(el);
+    }
+    el.textContent = msg;
+    el.style.background = isError ? '#c0392b' : '#2c7a4b';
+    el.style.display = 'block';
+    if (el._hideTimer) { clearTimeout(el._hideTimer); el._hideTimer = null; }
+    if (!isError) {
+        el._hideTimer = setTimeout(function () {
+            if (el) el.style.display = 'none';
+        }, 2500);
+    }
+}
+
 /* Convert a chosen image file into a small base64 data URL so it is stored
    directly inside the document — no upload server, no image hosting, and no
    internet required. It shows even when fully offline. The image is resized to
@@ -3616,6 +3640,7 @@ function recordCashierSale(items) {
         try { localStorage.removeItem('cachedOrderItems'); } catch (e) {}
     }, function (err) {
         console.error('[sale] Write FAILED:', err);
+        showSyncStatus(S.itemSyncFailed + ': ' + (err && err.message ? err.message : err), true);
         alert(S.itemSyncFailed + '\n' + (err && err.message ? err.message : err));
     });
     var entry = {
@@ -4934,6 +4959,7 @@ function loadExpenses() {
     }
 
     startAdminLiveListeners();
+    showSyncStatus('Syncing with server…', false);
     syncAdminFinancialsFromServer(function () {
         renderExpensesUI(getExpensesMonth());
     });
@@ -5216,6 +5242,7 @@ function saveExpense() {
         if (modal) modal.classList.remove('active');
     }, function (err) {
         console.error('[expense] Write FAILED:', err);
+        showSyncStatus(S.itemSyncFailed + ': ' + (err && err.message ? err.message : err), true);
         alert(S.itemSyncFailed + '\n' + (err && err.message ? err.message : err));
     });
 }
