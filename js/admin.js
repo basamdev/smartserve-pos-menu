@@ -137,13 +137,19 @@ function saleEntryFromDoc(doc) {
     var ts = s.timestamp;
     var timestampSeconds = null;
     if (ts) {
-        if (ts.seconds != null) timestampSeconds = ts.seconds;
-        else if (ts._seconds != null) timestampSeconds = ts._seconds;
-        else if (typeof ts.toDate === 'function') timestampSeconds = Math.floor(ts.toDate().getTime() / 1000);
-        else if (typeof ts === 'number') timestampSeconds = Math.floor(ts / 1000);
-        else if (typeof ts === 'string') {
+        if (typeof ts === 'number') {
+            timestampSeconds = Math.floor(ts / 1000);
+        } else if (typeof ts === 'string') {
             var parsed = new Date(ts);
             if (!isNaN(parsed.getTime())) timestampSeconds = Math.floor(parsed.getTime() / 1000);
+        } else if (ts.seconds != null) {
+            timestampSeconds = ts.seconds;
+        } else if (ts._seconds != null) {
+            timestampSeconds = ts._seconds;
+        } else if (typeof ts.toDate === 'function') {
+            timestampSeconds = Math.floor(ts.toDate().getTime() / 1000);
+        } else if (ts instanceof Date) {
+            timestampSeconds = Math.floor(ts.getTime() / 1000);
         }
     }
     return {
