@@ -809,16 +809,34 @@ function syncAdminFinancialsFromServer(callback) {
         if (typeof callback === 'function') callback();
         return Promise.resolve();
     }
+    
+    // Force fetch from server using SDK to ensure latest data
     return Promise.all([
-        warmSalesCacheFromServer(),
-        warmExpensesCacheFromServer()
-    ]).then(function () {
+        db.collection('sales').get({ source: 'server' }),
+        db.collection('expenses').get({ source: 'server' })
+    ]).then(function (results) {
+        var salesSnap = results[0];
+        var expensesSnap = results[1];
+        
+        // Process sales
+        var sales = [];
+        salesSnap.forEach(function (d) { sales.push(saleEntryFromDoc(d)); });
+        writeCachedSales(sales);
         syncSalesLiveFromCache();
+        
+        // Process expenses
+        var expenses = [];
+        expensesSnap.forEach(function (d) { expenses.push(expenseEntryFromDoc(d)); });
+        writeCachedExpenses(expenses);
         syncExpensesLiveFromCache();
+        
         refreshAdminCurrentSection();
         if (typeof callback === 'function') callback();
     }).catch(function (err) {
         console.warn('[sync] financials:', err && err.message ? err.message : err);
+        // Fallback to cache if server fetch fails
+        syncSalesLiveFromCache();
+        syncExpensesLiveFromCache();
         if (typeof callback === 'function') callback();
     });
 }
@@ -955,7 +973,9 @@ function getUserRole() {
     
     // Check if role is stored in localStorage (for offline support)
     var cachedRole = localStorage.getItem('userRole');
-    if (cachedRole) return cachedRole;
+    if (cachedRole && ['admin', 'owner', 'staff', 'cashier'].indexOf(cachedRole) !== -1) {
+        return cachedRole;
+    }
     
     // Default to admin for existing users (backward compatibility)
     // In production, this should be fetched from Firestore or Firebase Custom Claims
@@ -1275,12 +1295,6 @@ function loadAdminSection(section) {
     var adminContent = document.getElementById('adminContent');
     if (!adminContent) return;
     
-    // Check if user can access this section
-    if (!canAccessSection(section)) {
-        adminContent.innerHTML = '<div class="card"><h2>' + (S.accessDenied || 'Access Denied') + '</h2><p>' + (S.noSectionAccess || 'You do not have permission to access this section.') + '</p></div>';
-        return;
-    }
-    
     adminContent.innerHTML = '<div class="loading">' + S.loading + '</div>';
 
     try {
@@ -1323,16 +1337,6 @@ function getMonthName(monthIndex, strings) {
 }
 
 function loadDashboard() {
-    // Check if user has dashboard access
-    if (!restrictDashboardAccess()) {
-        var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
-        var adminContent = document.getElementById('adminContent');
-        if (adminContent) {
-            adminContent.innerHTML = '<div class="card"><h2>' + (S.accessDenied || 'Access Denied') + '</h2><p>' + (S.noDashboardAccess || 'You do not have permission to view the financial dashboard.') + '</p></div>';
-        }
-        return;
-    }
-    
     // Force refresh from server to ensure cross-device sync
     syncAdminFinancialsFromServer(function() {
         // After server sync, render dashboard with fresh data
