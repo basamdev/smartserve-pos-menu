@@ -1,6 +1,7 @@
 // Admin.js — Ali Coffee Admin Panel
 
-const orderItems = [];
+var orderItems = [];
+try { var saved = JSON.parse(localStorage.getItem('cachedOrderItems') || '[]'); if (saved && saved.length) orderItems.push.apply(orderItems, saved); } catch (e) {}
 let activeItemModal = null;
 let cashierUnsubscribe = null;
 let cashierActiveFilter = 'all';
@@ -1345,22 +1346,11 @@ function loadDashboard() {
         });
     }
 
-    renderDashboardUI(currentMonth);
-    renderRecentSalesUI();
     startAdminLiveListeners();
     syncAdminFinancialsFromServer(function () {
         renderDashboardUI(currentMonth);
         renderRecentSalesUI();
     });
-    if (window.db) {
-        db.collection('sales').get({ source: 'server' }).then(function (snap) {
-            if (!snap.empty) {
-                mergeSalesSnap(snap);
-            }
-        }).catch(function (e) {
-            console.warn('[dashboard] fallback sales read failed:', e);
-        });
-    }
 }
 
 function renderDashboardUI(month) {
@@ -3623,6 +3613,7 @@ function recordCashierSale(items) {
         console.log('[sale] Sale queued successfully');
         orderItems.length = 0;
         updateOrderDisplay();
+        try { localStorage.removeItem('cachedOrderItems'); } catch (e) {}
     }, function (err) {
         console.error('[sale] Write FAILED:', err);
         alert(S.itemSyncFailed + '\n' + (err && err.message ? err.message : err));
@@ -4159,6 +4150,7 @@ function updateOrderDisplay() {
             updateOrderDisplay();
         });
     });
+    try { localStorage.setItem('cachedOrderItems', JSON.stringify(orderItems)); } catch (e) {}
 }
 
 /* ============ SETTINGS ============ */
@@ -4941,20 +4933,10 @@ function loadExpenses() {
         });
     }
 
-    renderExpensesUI(currentMonth);
     startAdminLiveListeners();
     syncAdminFinancialsFromServer(function () {
         renderExpensesUI(getExpensesMonth());
     });
-    if (window.db) {
-        db.collection('expenses').get({ source: 'server' }).then(function (snap) {
-            if (!snap.empty) {
-                mergeExpensesSnap(snap);
-            }
-        }).catch(function (e) {
-            console.warn('[expenses] fallback expenses read failed:', e);
-        });
-    }
 }
 
 function refreshDashboardUI(month) {
