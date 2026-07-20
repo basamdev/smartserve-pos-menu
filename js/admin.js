@@ -3605,6 +3605,22 @@ function recordCashierSale(items) {
         orderItems.length = 0;
         updateOrderDisplay();
     });
+    saleWrite.then(function (ref) {
+        if (ref && ref.id) {
+            var entry = {
+                id: ref.id,
+                items: cacheEntry.items,
+                total: total,
+                timestampSeconds: Math.floor(now.getTime() / 1000),
+                cashier: cacheEntry.cashier
+            };
+            _adminSalesLive.unshift(entry);
+            refreshDashboardUI(getDashboardMonth());
+            renderRecentSalesUI();
+        }
+    }).catch(function (err) {
+        console.error('Sale write error:', err);
+    });
     return total;
 }
 
@@ -4757,10 +4773,6 @@ function resetAllData() {
 /* ============ EXPENSES ============ */
 
 function loadExpenses() {
-    syncAdminFinancialsFromServer(function() {
-        renderExpensesUI(getExpensesMonth());
-    });
-    
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     var adminContent = document.getElementById('adminContent');
     var now = new Date();
@@ -4911,6 +4923,9 @@ function loadExpenses() {
 
     renderExpensesUI(currentMonth);
     startAdminLiveListeners();
+    syncAdminFinancialsFromServer(function () {
+        renderExpensesUI(getExpensesMonth());
+    });
     if (window.db) {
         db.collection('expenses').get({ source: 'server' }).then(function (snap) {
             if (!snap.empty) {
@@ -5171,6 +5186,30 @@ function saveExpense() {
         console.log('[expense] Expense written successfully, offline:', offline);
         alert(offline ? (S.expenseSavedOffline || S.expenseSaved) : S.expenseSaved);
     });
+    promise.then(function (ref) {
+        var entry = {
+            id: expenseId || (ref && ref.id ? ref.id : 'local-' + Date.now()),
+            name: name,
+            price: parseFloat(price) || 0,
+            date: date,
+            time: time,
+            timestampSeconds: Math.floor(dateTime.getTime() / 1000)
+        };
+        if (expenseId) {
+            for (var i = 0; i < _adminExpensesLive.length; i++) {
+                if (_adminExpensesLive[i].id === expenseId) {
+                    _adminExpensesLive[i] = entry;
+                    break;
+                }
+            }
+        } else {
+            _adminExpensesLive.unshift(entry);
+        }
+        renderExpensesUI(expenseMonth);
+        renderDashboardUI(getDashboardMonth());
+    }).catch(function (err) {
+        console.error('Expense write error:', err);
+    });
 }
 
 function deleteExpense(expenseId) {
@@ -5182,12 +5221,22 @@ function deleteExpense(expenseId) {
 
     applyWrite(db.collection('expenses').doc(expenseId).delete(), function (offline) {
         alert(offline ? (S.expenseDeletedOffline || S.expenseDeleted) : S.expenseDeleted);
+    });
+    db.collection('expenses').doc(expenseId).delete().then(function () {
+        for (var i = 0; i < _adminExpensesLive.length; i++) {
+            if (_adminExpensesLive[i].id === expenseId) {
+                _adminExpensesLive.splice(i, 1);
+                break;
+            }
+        }
         renderExpensesUI(month);
-        if (document.getElementById('todaySales')) renderDashboardUI(getDashboardMonth());
+        renderDashboardUI(getDashboardMonth());
+    }).catch(function (err) {
+        console.error('Delete expense error:', err);
     });
 }
 
-/* ============ EXPENSES ============ */
+/* ============ LOGOUT ============ */
 
 function handleLogout() {
     stopDashboardListeners();
