@@ -1334,6 +1334,15 @@ function loadDashboard() {
         renderDashboardUI(currentMonth);
         renderRecentSalesUI();
     });
+    if (window.db) {
+        db.collection('sales').get({ source: 'server' }).then(function (snap) {
+            if (!snap.empty) {
+                mergeSalesSnap(snap);
+            }
+        }).catch(function (e) {
+            console.warn('[dashboard] fallback sales read failed:', e);
+        });
+    }
 }
 
 function renderDashboardUI(month) {
@@ -4902,6 +4911,15 @@ function loadExpenses() {
 
     renderExpensesUI(currentMonth);
     startAdminLiveListeners();
+    if (window.db) {
+        db.collection('expenses').get({ source: 'server' }).then(function (snap) {
+            if (!snap.empty) {
+                mergeExpensesSnap(snap);
+            }
+        }).catch(function (e) {
+            console.warn('[expenses] fallback expenses read failed:', e);
+        });
+    }
 }
 
 function refreshDashboardUI(month) {
