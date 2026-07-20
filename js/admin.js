@@ -150,7 +150,12 @@ function mergeSalesSnap(snapshot) {
     sales.sort(function (a, b) {
         return (b.timestampSeconds || 0) - (a.timestampSeconds || 0);
     });
-    _adminSalesLive = sales;
+    var serverIds = {};
+    sales.forEach(function (s) { serverIds[s.id] = true; });
+    var localOnly = _adminSalesLive.filter(function (s) {
+        return !serverIds[s.id];
+    });
+    _adminSalesLive = sales.concat(localOnly);
     refreshDashboardUI(getDashboardMonth());
 }
 
@@ -253,7 +258,12 @@ function mergeExpensesSnap(snapshot) {
     expenses.sort(function (a, b) {
         return (b.timestampSeconds || 0) - (a.timestampSeconds || 0);
     });
-    _adminExpensesLive = expenses;
+    var serverIds = {};
+    expenses.forEach(function (e) { serverIds[e.id] = true; });
+    var localOnly = _adminExpensesLive.filter(function (e) {
+        return !serverIds[e.id];
+    });
+    _adminExpensesLive = expenses.concat(localOnly);
     refreshDashboardUI(getDashboardMonth());
 }
 
@@ -345,7 +355,12 @@ function mergeRestExpensesDocs(docs) {
     expenses.sort(function (a, b) {
         return (b.timestampSeconds || 0) - (a.timestampSeconds || 0);
     });
-    _adminExpensesLive = expenses;
+    var serverIds = {};
+    expenses.forEach(function (e) { serverIds[e.id] = true; });
+    var localOnly = _adminExpensesLive.filter(function (e) {
+        return !serverIds[e.id];
+    });
+    _adminExpensesLive = expenses.concat(localOnly);
 }
 
 function mergeRestSalesDocs(docs) {
@@ -363,7 +378,12 @@ function mergeRestSalesDocs(docs) {
     sales.sort(function (a, b) {
         return (b.timestampSeconds || 0) - (a.timestampSeconds || 0);
     });
-    _adminSalesLive = sales;
+    var serverIds = {};
+    sales.forEach(function (s) { serverIds[s.id] = true; });
+    var localOnly = _adminSalesLive.filter(function (s) {
+        return !serverIds[s.id];
+    });
+    _adminSalesLive = sales.concat(localOnly);
 }
 
 function clearAdminSalesExpensesCache() {
@@ -815,7 +835,9 @@ function startAdminLiveListeners() {
         console.log('[live] Sales snapshot received, docs:', snap.size);
         if (_adminResetInProgress) return;
         if (snap.empty) {
-            _adminSalesLive = [];
+            _adminSalesLive = _adminSalesLive.filter(function (s) {
+                return String(s.id).indexOf('local-') === 0;
+            });
             refreshAdminCurrentSection();
             return;
         }
@@ -832,7 +854,9 @@ function startAdminLiveListeners() {
         console.log('[live] Expenses snapshot received, docs:', snap.size);
         if (_adminResetInProgress) return;
         if (snap.empty) {
-            _adminExpensesLive = [];
+            _adminExpensesLive = _adminExpensesLive.filter(function (e) {
+                return String(e.id).indexOf('local-') === 0;
+            });
             refreshAdminCurrentSection();
             return;
         }
@@ -3614,7 +3638,16 @@ function recordCashierSale(items) {
                 timestampSeconds: Math.floor(now.getTime() / 1000),
                 cashier: cacheEntry.cashier
             };
-            _adminSalesLive.unshift(entry);
+            var exists = false;
+            for (var i = 0; i < _adminSalesLive.length; i++) {
+                if (_adminSalesLive[i].id === entry.id) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                _adminSalesLive.unshift(entry);
+            }
             refreshDashboardUI(getDashboardMonth());
             renderRecentSalesUI();
         }
@@ -5181,32 +5214,49 @@ function saveExpense() {
         promise = db.collection('expenses').add(expenseData);
     }
 
+    var entry = {
+        id: expenseId || ('local-' + Date.now()),
+        name: name,
+        price: parseFloat(price) || 0,
+        date: date,
+        time: time,
+        timestampSeconds: Math.floor(dateTime.getTime() / 1000)
+    };
+    if (expenseId) {
+        for (var i = 0; i < _adminExpensesLive.length; i++) {
+            if (_adminExpensesLive[i].id === expenseId) {
+                _adminExpensesLive[i] = entry;
+                break;
+            }
+        }
+    } else {
+        _adminExpensesLive.unshift(entry);
+    }
+    renderExpensesUI(expenseMonth);
+    renderDashboardUI(getDashboardMonth());
+
     console.log('[expense] Writing expense to Firestore:', name, 'price:', price);
     applyWrite(promise, function (offline) {
         console.log('[expense] Expense written successfully, offline:', offline);
         alert(offline ? (S.expenseSavedOffline || S.expenseSaved) : S.expenseSaved);
     });
     promise.then(function (ref) {
-        var entry = {
-            id: expenseId || (ref && ref.id ? ref.id : 'local-' + Date.now()),
-            name: name,
-            price: parseFloat(price) || 0,
-            date: date,
-            time: time,
-            timestampSeconds: Math.floor(dateTime.getTime() / 1000)
-        };
-        if (expenseId) {
-            for (var i = 0; i < _adminExpensesLive.length; i++) {
-                if (_adminExpensesLive[i].id === expenseId) {
-                    _adminExpensesLive[i] = entry;
+        if (ref && ref.id && !expenseId) {
+            for (var j = _adminExpensesLive.length - 1; j >= 0; j--) {
+                if (_adminExpensesLive[j].id === ref.id) {
+                    _adminExpensesLive.splice(j, 1);
                     break;
                 }
             }
-        } else {
-            _adminExpensesLive.unshift(entry);
+            for (var k = 0; k < _adminExpensesLive.length; k++) {
+                if (_adminExpensesLive[k].id === entry.id) {
+                    _adminExpensesLive[k].id = ref.id;
+                    break;
+                }
+            }
+            renderExpensesUI(expenseMonth);
+            renderDashboardUI(getDashboardMonth());
         }
-        renderExpensesUI(expenseMonth);
-        renderDashboardUI(getDashboardMonth());
     }).catch(function (err) {
         console.error('Expense write error:', err);
     });
@@ -5219,10 +5269,11 @@ function deleteExpense(expenseId) {
     var monthSelect = document.getElementById('expensesMonthSelect');
     var month = monthSelect ? parseInt(monthSelect.value, 10) : new Date().getMonth();
 
-    applyWrite(db.collection('expenses').doc(expenseId).delete(), function (offline) {
+    var promise = db.collection('expenses').doc(expenseId).delete();
+    applyWrite(promise, function (offline) {
         alert(offline ? (S.expenseDeletedOffline || S.expenseDeleted) : S.expenseDeleted);
     });
-    db.collection('expenses').doc(expenseId).delete().then(function () {
+    promise.then(function () {
         for (var i = 0; i < _adminExpensesLive.length; i++) {
             if (_adminExpensesLive[i].id === expenseId) {
                 _adminExpensesLive.splice(i, 1);
