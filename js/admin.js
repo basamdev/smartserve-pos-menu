@@ -129,20 +129,24 @@ function saleTimestampToMs(item) {
             var parsed = new Date(ts);
             if (!isNaN(parsed.getTime())) return parsed.getTime();
         }
-        if (typeof ts.toDate === 'function') {
-            return ts.toDate().getTime();
-        }
         if (ts.seconds != null) {
-            return ts.seconds * 1000;
+            var secNum = parseFloat(ts.seconds);
+            if (!isNaN(secNum)) return secNum * 1000;
         }
         if (ts._seconds != null) {
-            return ts._seconds * 1000;
+            var secNum2 = parseFloat(ts._seconds);
+            if (!isNaN(secNum2)) return secNum2 * 1000;
+        }
+        if (typeof ts.toDate === 'function') {
+            return ts.toDate().getTime();
         }
         if (ts instanceof Date) {
             return ts.getTime();
         }
-        parsed = new Date(ts);
-        if (!isNaN(parsed.getTime())) return parsed.getTime();
+        try {
+            var d = new Date(ts);
+            if (!isNaN(d.getTime())) return d.getTime();
+        } catch (e) {}
     }
     return 0;
 }
@@ -158,31 +162,71 @@ function saleEntryFromDoc(doc) {
             var parsed = new Date(ts);
             if (!isNaN(parsed.getTime())) timestampSeconds = Math.floor(parsed.getTime() / 1000);
         } else if (ts.seconds != null) {
-            timestampSeconds = ts.seconds;
+            timestampSeconds = parseFloat(ts.seconds);
         } else if (ts._seconds != null) {
-            timestampSeconds = ts._seconds;
+            timestampSeconds = parseFloat(ts._seconds);
         } else if (typeof ts.toDate === 'function') {
             timestampSeconds = Math.floor(ts.toDate().getTime() / 1000);
         } else if (ts instanceof Date) {
             timestampSeconds = Math.floor(ts.getTime() / 1000);
         } else {
-            parsed = new Date(ts);
-            if (!isNaN(parsed.getTime())) timestampSeconds = Math.floor(parsed.getTime() / 1000);
+            try {
+                var d = new Date(ts);
+                if (!isNaN(d.getTime())) timestampSeconds = Math.floor(d.getTime() / 1000);
+            } catch (e) {}
         }
     }
-    if (timestampSeconds == null && ts != null) {
-        try {
-            var d = new Date(ts);
-            if (!isNaN(d.getTime())) timestampSeconds = Math.floor(d.getTime() / 1000);
-        } catch (e) {}
-    }
-    return {
+    var entry = {
         id: doc.id,
         items: s.items || [],
         total: s.total || 0,
         timestampSeconds: timestampSeconds,
         cashier: s.cashier
     };
+    return normalizeSaleEntry(entry);
+}
+
+function normalizeSaleEntry(entry) {
+    if (!entry) return entry;
+    var sec = deriveSaleTimestampSeconds(entry);
+    if (sec != null) entry.timestampSeconds = sec;
+    return entry;
+}
+
+function deriveSaleTimestampSeconds(entry) {
+    if (!entry) return null;
+    if (entry.timestampSeconds != null && !isNaN(parseFloat(entry.timestampSeconds))) {
+        return parseFloat(entry.timestampSeconds);
+    }
+    var ts = entry.timestamp;
+    if (ts != null) {
+        if (typeof ts === 'number') {
+            return Math.floor(ts / 1000);
+        }
+        if (typeof ts === 'string') {
+            var parsed = new Date(ts);
+            if (!isNaN(parsed.getTime())) return Math.floor(parsed.getTime() / 1000);
+        }
+        if (ts.seconds != null) {
+            var secNum = parseFloat(ts.seconds);
+            if (!isNaN(secNum)) return secNum;
+        }
+        if (ts._seconds != null) {
+            var secNum2 = parseFloat(ts._seconds);
+            if (!isNaN(secNum2)) return secNum2;
+        }
+        if (typeof ts.toDate === 'function') {
+            return Math.floor(ts.toDate().getTime() / 1000);
+        }
+        if (ts instanceof Date) {
+            return Math.floor(ts.getTime() / 1000);
+        }
+        try {
+            var d = new Date(ts);
+            if (!isNaN(d.getTime())) return Math.floor(d.getTime() / 1000);
+        } catch (e) {}
+    }
+    return null;
 }
 
 function mergeSalesSnap(snapshot) {
@@ -317,21 +361,41 @@ function getExpensesDataSource() {
 
 function deriveExpenseTimestampSeconds(entry) {
     if (!entry) return null;
-    if (entry.timestampSeconds != null && !isNaN(entry.timestampSeconds)) {
-        return entry.timestampSeconds;
+    if (entry.timestampSeconds != null && !isNaN(parseFloat(entry.timestampSeconds))) {
+        return parseFloat(entry.timestampSeconds);
     }
     if (entry.date && entry.time) {
         var d = new Date(entry.date + 'T' + entry.time);
         if (!isNaN(d.getTime())) return Math.floor(d.getTime() / 1000);
     }
     var ts = entry.timestamp;
-    if (typeof ts === 'string') {
-        var p = new Date(ts);
-        if (!isNaN(p.getTime())) return Math.floor(p.getTime() / 1000);
+    if (ts != null) {
+        if (typeof ts === 'number') {
+            return Math.floor(ts / 1000);
+        }
+        if (typeof ts === 'string') {
+            var p = new Date(ts);
+            if (!isNaN(p.getTime())) return Math.floor(p.getTime() / 1000);
+        }
+        if (ts.seconds != null) {
+            var secNum = parseFloat(ts.seconds);
+            if (!isNaN(secNum)) return secNum;
+        }
+        if (ts._seconds != null) {
+            var secNum2 = parseFloat(ts._seconds);
+            if (!isNaN(secNum2)) return secNum2;
+        }
+        if (typeof ts.toDate === 'function') {
+            return Math.floor(ts.toDate().getTime() / 1000);
+        }
+        if (ts instanceof Date) {
+            return Math.floor(ts.getTime() / 1000);
+        }
+        try {
+            var d = new Date(ts);
+            if (!isNaN(d.getTime())) return Math.floor(d.getTime() / 1000);
+        } catch (e) {}
     }
-    if (ts && ts.seconds != null) return ts.seconds;
-    if (ts && ts._seconds != null) return ts._seconds;
-    if (ts && typeof ts.toDate === 'function') return Math.floor(ts.toDate().getTime() / 1000);
     return null;
 }
 
@@ -1281,8 +1345,14 @@ function toDisplayTime(ts) {
 
     if (ts instanceof Date) return format12(ts);
     if (typeof ts.toDate === 'function') return format12(ts.toDate());
-    if (ts.seconds != null) return format12(new Date(ts.seconds * 1000));
-    if (ts._seconds != null) return format12(new Date(ts._seconds * 1000));
+    if (ts.seconds != null) {
+        var sec = parseFloat(ts.seconds);
+        if (!isNaN(sec)) return format12(new Date(sec * 1000));
+    }
+    if (ts._seconds != null) {
+        var sec2 = parseFloat(ts._seconds);
+        if (!isNaN(sec2)) return format12(new Date(sec2 * 1000));
+    }
     return String(ts);
 }
 
@@ -5024,9 +5094,27 @@ function expenseEntryFromDoc(doc) {
     var exp = doc.data();
     var ts = exp.timestamp;
     var timestampSeconds = null;
-    if (ts && ts.seconds != null) timestampSeconds = ts.seconds;
-    else if (ts && ts._seconds != null) timestampSeconds = ts._seconds;
-    else if (ts && typeof ts.toDate === 'function') timestampSeconds = Math.floor(ts.toDate().getTime() / 1000);
+    if (ts != null) {
+        if (typeof ts === 'number') {
+            timestampSeconds = Math.floor(ts / 1000);
+        } else if (typeof ts === 'string') {
+            var parsed = new Date(ts);
+            if (!isNaN(parsed.getTime())) timestampSeconds = Math.floor(parsed.getTime() / 1000);
+        } else if (ts.seconds != null) {
+            timestampSeconds = parseFloat(ts.seconds);
+        } else if (ts._seconds != null) {
+            timestampSeconds = parseFloat(ts._seconds);
+        } else if (typeof ts.toDate === 'function') {
+            timestampSeconds = Math.floor(ts.toDate().getTime() / 1000);
+        } else if (ts instanceof Date) {
+            timestampSeconds = Math.floor(ts.getTime() / 1000);
+        } else {
+            try {
+                var d = new Date(ts);
+                if (!isNaN(d.getTime())) timestampSeconds = Math.floor(d.getTime() / 1000);
+            } catch (e) {}
+        }
+    }
     return normalizeExpenseEntry({
         id: doc.id,
         name: exp.name,
