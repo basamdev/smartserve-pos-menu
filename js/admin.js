@@ -180,6 +180,7 @@ function saleEntryFromDoc(doc) {
         id: doc.id,
         items: s.items || [],
         total: s.total || 0,
+        timestamp: ts,
         timestampSeconds: timestampSeconds,
         cashier: s.cashier
     };
@@ -3760,6 +3761,7 @@ function recordCashierSale(items) {
         id: docId,
         items: saleData.items,
         total: total,
+        timestamp: firebase.firestore.Timestamp.fromDate(now),
         timestampSeconds: Math.floor(now.getTime() / 1000),
         cashier: cashierName
     };
