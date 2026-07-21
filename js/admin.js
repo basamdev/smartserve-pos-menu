@@ -143,6 +143,12 @@ function saleTimestampToMs(item) {
         if (ts instanceof Date) {
             return ts.getTime();
         }
+        if (typeof ts.seconds === 'function') {
+            var secObj = ts.seconds();
+            if (secObj && secObj.seconds != null) {
+                return parseFloat(secObj.seconds) * 1000;
+            }
+        }
         try {
             var d = new Date(ts);
             if (!isNaN(d.getTime())) return d.getTime();
@@ -169,6 +175,11 @@ function saleEntryFromDoc(doc) {
             timestampSeconds = Math.floor(ts.toDate().getTime() / 1000);
         } else if (ts instanceof Date) {
             timestampSeconds = Math.floor(ts.getTime() / 1000);
+        } else if (typeof ts.seconds === 'function') {
+            var secObj = ts.seconds();
+            if (secObj && secObj.seconds != null) {
+                timestampSeconds = parseFloat(secObj.seconds);
+            }
         } else {
             try {
                 var d = new Date(ts);
@@ -221,6 +232,12 @@ function deriveSaleTimestampSeconds(entry) {
         }
         if (ts instanceof Date) {
             return Math.floor(ts.getTime() / 1000);
+        }
+        if (typeof ts.seconds === 'function') {
+            var secObj = ts.seconds();
+            if (secObj && secObj.seconds != null) {
+                return parseFloat(secObj.seconds);
+            }
         }
         try {
             var d = new Date(ts);
@@ -791,6 +808,11 @@ function restDocsToSales(docs) {
                 timestampSeconds = Math.floor(ts.toDate().getTime() / 1000);
             } else if (ts instanceof Date) {
                 timestampSeconds = Math.floor(ts.getTime() / 1000);
+            } else if (typeof ts.seconds === 'function') {
+                var secObj = ts.seconds();
+                if (secObj && secObj.seconds != null) {
+                    timestampSeconds = parseFloat(secObj.seconds);
+                }
             }
         }
         return {
