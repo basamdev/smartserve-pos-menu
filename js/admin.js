@@ -774,18 +774,32 @@ function applyMenuCloudWrite(config) {
 
 function restDocsToSales(docs) {
     return docs.map(function (d) {
-        var ts = d.data.timestamp;
+        var s = d.data();
+        var ts = s.timestamp;
         var timestampSeconds = null;
-        if (typeof ts === 'string') {
-            var parsed = new Date(ts);
-            if (!isNaN(parsed.getTime())) timestampSeconds = Math.floor(parsed.getTime() / 1000);
+        if (ts != null) {
+            if (typeof ts === 'number') {
+                timestampSeconds = Math.floor(ts / 1000);
+            } else if (typeof ts === 'string') {
+                var parsed = new Date(ts);
+                if (!isNaN(parsed.getTime())) timestampSeconds = Math.floor(parsed.getTime() / 1000);
+            } else if (ts.seconds != null) {
+                timestampSeconds = parseFloat(ts.seconds);
+            } else if (ts._seconds != null) {
+                timestampSeconds = parseFloat(ts._seconds);
+            } else if (typeof ts.toDate === 'function') {
+                timestampSeconds = Math.floor(ts.toDate().getTime() / 1000);
+            } else if (ts instanceof Date) {
+                timestampSeconds = Math.floor(ts.getTime() / 1000);
+            }
         }
         return {
             id: d.id,
-            items: d.data.items || [],
-            total: d.data.total || 0,
+            items: s.items || [],
+            total: s.total || 0,
+            timestamp: ts,
             timestampSeconds: timestampSeconds,
-            cashier: d.data.cashier
+            cashier: s.cashier
         };
     });
 }
