@@ -128,27 +128,71 @@ function syncSalesLiveFromCache() {
 
 function saleTimestampToMs(item) {
     if (!item) return 0;
-    if (item.timestampSeconds != null) return item.timestampSeconds * 1000;
+    var sec = item.timestampSeconds;
+    if (sec != null && !isNaN(parseFloat(sec))) {
+        return parseFloat(sec) * 1000;
+    }
     var ts = item.timestamp;
-    if (!ts) return 0;
-    if (typeof ts.toDate === 'function') return ts.toDate().getTime();
-    if (ts.seconds != null) return ts.seconds * 1000;
-    if (ts._seconds != null) return ts._seconds * 1000;
-    var parsed = new Date(ts);
-    return isNaN(parsed.getTime()) ? 0 : parsed.getTime();
+    if (ts != null) {
+        if (typeof ts === 'number') {
+            return ts;
+        }
+        if (typeof ts === 'string') {
+            var parsed = new Date(ts);
+            if (!isNaN(parsed.getTime())) return parsed.getTime();
+        }
+        if (ts.seconds != null) {
+            var secNum = parseFloat(ts.seconds);
+            if (!isNaN(secNum)) return secNum * 1000;
+        }
+        if (ts._seconds != null) {
+            var secNum2 = parseFloat(ts._seconds);
+            if (!isNaN(secNum2)) return secNum2 * 1000;
+        }
+        if (typeof ts.toDate === 'function') {
+            return ts.toDate().getTime();
+        }
+        if (ts instanceof Date) {
+            return ts.getTime();
+        }
+        try {
+            var d = new Date(ts);
+            if (!isNaN(d.getTime())) return d.getTime();
+        } catch (e) {}
+    }
+    return 0;
 }
 
 function saleEntryFromDoc(doc) {
     var s = doc.data();
     var ts = s.timestamp;
     var timestampSeconds = null;
-    if (ts && ts.seconds != null) timestampSeconds = ts.seconds;
-    else if (ts && ts._seconds != null) timestampSeconds = ts._seconds;
-    else if (ts && typeof ts.toDate === 'function') timestampSeconds = Math.floor(ts.toDate().getTime() / 1000);
+    if (ts != null) {
+        if (typeof ts === 'number') {
+            timestampSeconds = Math.floor(ts / 1000);
+        } else if (typeof ts === 'string') {
+            var parsed = new Date(ts);
+            if (!isNaN(parsed.getTime())) timestampSeconds = Math.floor(parsed.getTime() / 1000);
+        } else if (ts.seconds != null) {
+            timestampSeconds = parseFloat(ts.seconds);
+        } else if (ts._seconds != null) {
+            timestampSeconds = parseFloat(ts._seconds);
+        } else if (typeof ts.toDate === 'function') {
+            timestampSeconds = Math.floor(ts.toDate().getTime() / 1000);
+        } else if (ts instanceof Date) {
+            timestampSeconds = Math.floor(ts.getTime() / 1000);
+        } else {
+            try {
+                var d = new Date(ts);
+                if (!isNaN(d.getTime())) timestampSeconds = Math.floor(d.getTime() / 1000);
+            } catch (e) {}
+        }
+    }
     return {
         id: doc.id,
         items: s.items || [],
         total: s.total || 0,
+        timestamp: ts,
         timestampSeconds: timestampSeconds,
         cashier: s.cashier
     };
@@ -3691,11 +3735,13 @@ function recordCashierSale(items) {
     var S = i18n[localStorage.getItem('selectedLang') || 'ku'] || i18n.en;
     var total = items.reduce(function (s, i) { return s + i.price * i.quantity; }, 0);
     var now = new Date();
+    var ts = firebase.firestore.Timestamp.fromDate(now);
     var tempId = 'local-' + Date.now();
     var cacheEntry = {
         id: tempId,
         items: items.map(function (i) { return { name: i.name, price: i.price, quantity: i.quantity }; }),
         total: total,
+        timestamp: ts,
         timestampSeconds: Math.floor(now.getTime() / 1000),
         cashier: (window.auth && auth.currentUser) ? auth.currentUser.email : S.unknown
     };
