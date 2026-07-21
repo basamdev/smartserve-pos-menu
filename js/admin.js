@@ -815,7 +815,7 @@ function restDocsToSales(docs) {
                 }
             }
         }
-        return {
+        var entry = {
             id: d.id,
             items: s.items || [],
             total: s.total || 0,
@@ -823,6 +823,7 @@ function restDocsToSales(docs) {
             timestampSeconds: timestampSeconds,
             cashier: s.cashier
         };
+        return normalizeSaleEntry(entry);
     });
 }
 
