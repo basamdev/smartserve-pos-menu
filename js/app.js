@@ -1,4 +1,4 @@
-// App.js — Ali Coffee Premium Menu
+// App.js — Smartserve Premium Menu
 // Handles: i18n, theme, category filtering, product detail modal, video player
 
 window.openMenu = function (lang) {
@@ -49,7 +49,7 @@ const i18n = {
         menuLoadRetry: 'دووبارە هەوڵبدەرەوە',
         menuConnectionHint: 'پەیوەندی ئینتەرنێت یان ڕێکخستنی Firebase بپشکنە.',
         noCategories: 'هیچ بەشێک نییە.',
-        pageTitle: 'عەلی کافێ | مێنوو',
+        pageTitle: 'سمارت سێرڤ | مێنوو',
         dashboard: 'داشبۆرد',
         manageItems: 'بەڕێوەبردنی ئایتمەکان',
         manageCategories: 'بەڕێوەبردنی بەشەکان',
@@ -186,7 +186,7 @@ const i18n = {
         sold: 'دانە',
         itemsCount: ' ئایتم',
         unknown: 'نەناسراو',
-        siteName: 'عەلی کافێ',
+        siteName: 'سمارت سێرڤ',
         addCategory: '+ زیادکردنی بەشی نوێ',
         categoryNameKu: 'ناوی بەش بە کوردی',
         categoryNameAr: 'ناوی بەش بە عەرەبی',
@@ -278,7 +278,7 @@ const i18n = {
         instagramUrl: 'ئینستاگرام',
         tiktokUrl: 'تیکتۆک',
         snapchatUrl: 'سنەپچات',
-        cafeInfoTitle: 'عەلی کافێ',
+        cafeInfoTitle: 'سمارت سێرڤ',
         linkCopied: 'بەستەر کۆپی کرا!',
         installTitle: 'زیادکردن بۆ سکرینی سەرەکی',
         installSubtitle: 'زیادکردنی مینیۆ کەمان بوو ناو سکرین وەکو ئەپلیکەیشن',
@@ -291,7 +291,7 @@ const i18n = {
         installImagesMissing: 'وێنەکانی ڕێنمایی لە images/install/ دابنێ',
         iosStep1: 'دوگمەی Share (↗) لە خوارەوەی Safari دابگرە',
         iosStep2: '«Add to Home Screen» هەڵبژێرە',
-        iosStep3: '«Add» دابگرە — ئایکۆنی Ali Coffee لەسەر سکرین دەردەکەوێت',
+        iosStep3: '«Add» دابگرە — ئایکۆنی Smartserve لەسەر سکرین دەردەکەوێت',
         androidStep1: 'Menu (⋮) لە گۆشەی سەرەوەی Chrome دابگرە',
         androidStep2: '«Add to Home screen» هەڵبژێرە',
         androidStep3: '«Install» هەڵبژێرە',
@@ -548,11 +548,11 @@ const i18n = {
         installImagesMissing: 'ضع صور الشرح في images/install/',
         iosStep1: 'اضغط زر Share (↗) أسفل Safari',
         iosStep2: 'اختر «Add to Home Screen»',
-        iosStep3: 'اضغط «Add» — يظهر أيقونة Ali Coffee على الشاشة',
+        iosStep3: 'اضغط «Add» — يظهر أيقونة Smartserve على الشاشة',
         androidStep1: 'اضغط القائمة (⋮) أعلى Chrome',
         androidStep2: 'اختر «Add to Home screen»',
         androidStep3: 'اختر «Install»',
-        androidStep4: 'اضغط «Install» — يُثبت تطبيق Ali Coffee',
+        androidStep4: 'اضغط «Install» — يُثبت تطبيق Smartserve',
     },
     en: {
         menuTitle: 'Our Menu',
@@ -563,7 +563,7 @@ const i18n = {
         menuLoadRetry: 'Try again',
         menuConnectionHint: 'Check internet or Firebase settings for this domain.',
         noCategories: 'No categories.',
-        pageTitle: 'Ali Coffee | Menu',
+        pageTitle: 'Smartserve | Menu',
         dashboard: 'Dashboard',
         manageItems: 'Manage Items',
         manageCategories: 'Manage Categories',
@@ -697,7 +697,7 @@ const i18n = {
         sold: 'sold',
         itemsCount: ' items',
         unknown: 'unknown',
-        siteName: 'Ali Coffee',
+        siteName: 'Smartserve',
         addCategory: '+ Add New Category',
         categoryNameKu: 'Category Name (Kurdish)',
         categoryNameAr: 'Category Name (Arabic)',
@@ -790,7 +790,7 @@ const i18n = {
         instagramUrl: 'Instagram',
         tiktokUrl: 'TikTok',
         snapchatUrl: 'Snapchat',
-        cafeInfoTitle: 'Ali Coffee',
+        cafeInfoTitle: 'Smartserve',
         linkCopied: 'Link copied!',
         installTitle: 'Add to Home Screen',
         installSubtitle: 'Add our menu to your home screen like an app',
@@ -803,11 +803,11 @@ const i18n = {
         installImagesMissing: 'Add tutorial images to images/install/',
         iosStep1: 'Tap Share (↗) at the bottom of Safari',
         iosStep2: 'Choose «Add to Home Screen»',
-        iosStep3: 'Tap «Add» — Ali Coffee icon appears on your home screen',
+        iosStep3: 'Tap «Add» — Smartserve icon appears on your home screen',
         androidStep1: 'Tap Menu (⋮) at the top of Chrome',
         androidStep2: 'Choose «Add to Home screen»',
         androidStep3: 'Choose «Install»',
-        androidStep4: 'Tap «Install» — Ali Coffee is added to your phone',
+        androidStep4: 'Tap «Install» — Smartserve is added to your phone',
     }
 };
 
@@ -2183,8 +2183,8 @@ function setupMenuThemePicker() {
 }
 
 var HERO_TYPE_PHRASES = [
-    { text: 'Ali Coffee', dir: 'ltr' },
-    { text: 'عەلی کافێ', dir: 'rtl' }
+    { text: 'Smartserve', dir: 'ltr' },
+    { text: 'سمارت سێرڤ', dir: 'rtl' }
 ];
 
 function heroTypeChars(str) {
@@ -2750,7 +2750,7 @@ function getCafeInfo() {
     var closeMinutes = parseCafeTimeToMinutes(closeTime, 2);
 
     return {
-        name: localStorage.getItem('cafeName') || 'Ali Coffee',
+        name: localStorage.getItem('cafeName') || 'Smartserve',
         phone: normalizeWhatsAppPhone(localStorage.getItem('whatsappPhone') || '9647506454656'),
         locationUrl: storedUrl || defaultUrl,
         locationLabel: storedLabel || defaultLabel,

@@ -1,4 +1,4 @@
-# Ali Coffee Menu — Launch Checklist (v87)
+# Smartserve Menu — Launch Checklist (v87)
 
 Use this before printing QR codes and selling to customers.
 

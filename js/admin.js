@@ -1,4 +1,4 @@
-// Admin.js — Ali Coffee Admin Panel
+// Admin.js — Smartserve Admin Panel
 
 var orderItems = [];
 try { var saved = JSON.parse(localStorage.getItem('cachedOrderItems') || '[]'); if (saved && saved.length) orderItems.push.apply(orderItems, saved); } catch (e) {}
@@ -3958,7 +3958,7 @@ function buildReceiptPrintHtml(options) {
     '<body class="' + langClass + '">' +
         '<div class="receipt">' +
             '<img class="brand-logo" src="' + escapeReceiptHtml(options.logoUrl || 'assets/icon-192.png') + '" alt="" onerror="this.style.display=\'none\'">' +
-            '<div class="brand-title"><span class="en">Ali Coffee</span><span class="sep">|</span><span class="ku">عەلی كافێ</span></div>' +
+            '<div class="brand-title"><span class="en">Smartserve</span><span class="sep">|</span><span class="ku">سمارت سێرڤ</span></div>' +
             '<div class="brand-tagline">Premium Coffee House</div>' +
             (options.location ? '<div class="brand-location">' + escapeReceiptHtml(options.location) + '</div>' : '') +
             '<hr class="rule">' +

@@ -1,4 +1,4 @@
-# Ali Coffee - QR Menu System & Admin Panel
+# Smartserve - QR Menu System & Admin Panel
 
 ## ✅ FIXES & IMPROVEMENTS MADE
 
@@ -130,7 +130,7 @@ ali-cafe-menu/
 ### Cafe Name
 Change in `index.html` and `menu.html`:
 ```html
-<h1 class="cafe-title">عەلی کافێ</h1>
+<h1 class="cafe-title">سمارت سێرڤ</h1>
 ```
 
 ### Categories

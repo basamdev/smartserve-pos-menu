@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Debug Sales</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .sale { border: 1px solid #ccc; padding: 10px; margin: 10px 0; }
+        .error { color: red; }
+        .success { color: green; }
+    </style>
+</head>
+<body>
+    <h1>Sales Debug Tool</h1>
+    <button onclick="loadSales()">Load Sales from Firestore</button>
+    <div id="results"></div>
+
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-firestore.js"></script>
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyAO2FU5CDt5o5EEMI-Hd2d04g4HSX62C8M",
+            authDomain: "ali-cafe-menu.firebaseapp.com",
+            projectId: "ali-cafe-menu",
+            storageBucket: "ali-cafe-menu.appspot.com",
+            messagingSenderId: "50748629603",
+            appId: "1:50748629603:web:74a14f151d617c51b50e56",
+            measurementId: "G-J8W87J7KLW"
+        };
+        firebase.initializeApp(firebaseConfig);
+        const db = firebase.firestore();
+
+        async function loadSales() {
+            const results = document.getElementById('results');
+            results.innerHTML = '<p>Loading...</p>';
+            
+            try {
+                const snapshot = await db.collection('sales').get();
+                results.innerHTML = '<p class="success">Found ' + snapshot.size + ' sales</p>';
+                
+                let total = 0;
+                let html = '';
+                
+                snapshot.forEach(doc => {
+                    const data = doc.data();
+                    const saleTotal = data.total || 0;
+                    total += saleTotal;
+                    
+                    html += '<div class="sale">';
+                    html += '<strong>ID:</strong> ' + doc.id + '<br>';
+                    html += '<strong>Total:</strong> ' + saleTotal + ' IQD<br>';
+                    html += '<strong>Timestamp:</strong> ' + JSON.stringify(data.timestamp) + '<br>';
+                    html += '<strong>Items:</strong> ' + JSON.stringify(data.items) + '<br>';
+                    html += '</div>';
+                });
+                
+                html = '<h2>Total Sales: ' + total.toLocaleString() + ' IQD</h2>' + html;
+                results.innerHTML = html;
+                
+            } catch (error) {
+                results.innerHTML = '<p class="error">Error: ' + error.message + '</p>';
+                console.error(error);
+            }
+        }
+    </script>
+</body>
+</html>
