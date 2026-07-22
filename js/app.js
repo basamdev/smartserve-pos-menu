@@ -2749,8 +2749,14 @@ function getCafeInfo() {
     var openMinutes = parseCafeTimeToMinutes(openTime, 14);
     var closeMinutes = parseCafeTimeToMinutes(closeTime, 2);
 
+    var storedName = localStorage.getItem('cafeName');
+    if (storedName === 'عەلی کافێ' || storedName === 'Ali Coffee' || storedName === 'علي كافيه') {
+        storedName = 'Smartserve';
+        try { localStorage.setItem('cafeName', storedName); } catch (e) {}
+    }
+
     return {
-        name: localStorage.getItem('cafeName') || 'Smartserve',
+        name: storedName || 'Smartserve',
         phone: normalizeWhatsAppPhone(localStorage.getItem('whatsappPhone') || '9647506454656'),
         locationUrl: storedUrl || defaultUrl,
         locationLabel: storedLabel || defaultLabel,
